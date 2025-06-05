@@ -95,7 +95,7 @@ class GamingChartGenerator:
         
         # Professional 3-line title
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
-        plt.suptitle(title_text, fontsize=16, fontweight='bold', y=0.92, color='darkblue')
+        plt.suptitle(title_text, fontsize=16, fontweight='bold', y=0.98, color='white')
         plt.subplots_adjust(top=0.85)
         
         # Styling
