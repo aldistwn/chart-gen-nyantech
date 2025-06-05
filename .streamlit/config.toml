@@ -1,0 +1,29 @@
+[theme]
+# Gaming-inspired theme
+primaryColor = "#FF6600"           # Orange accent color
+backgroundColor = "#0E1117"        # Dark background
+secondaryBackgroundColor = "#262730" # Sidebar background
+textColor = "#FAFAFA"             # Light text
+
+[server]
+# File upload settings
+maxUploadSize = 200               # 200MB max file size
+maxMessageSize = 200              # 200MB max message size
+enableXsrfProtection = true       # Security
+enableCORS = false               # CORS settings
+
+[browser]
+# Privacy and performance
+gatherUsageStats = false          # Don't send usage stats
+showErrorDetails = true           # Show detailed errors in development
+
+[client]
+# Display settings
+showErrorDetails = true
+toolbarMode = "auto"
+
+[runner]
+# Performance settings
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
