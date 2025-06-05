@@ -70,10 +70,10 @@ class GamingChartGenerator:
             return False
     
     def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color):
-        """Generate professional gaming chart with transparent background"""
+        """Generate professional gaming chart with transparent background - 1920x1080"""
         
-        # Create figure with transparent background
-        fig, ax1 = plt.subplots(figsize=(14, 8))
+        # Create figure with 1920x1080 resolution (Full HD)
+        fig, ax1 = plt.subplots(figsize=(19.2, 10.8))  # 1920x1080 pixels at 100 DPI
         fig.patch.set_facecolor('none')  # Transparent figure background
         
         # FPS line (primary - in front)
