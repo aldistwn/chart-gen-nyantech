@@ -74,7 +74,7 @@ class GamingChartGenerator:
         
         # Create figure
         fig, ax1 = plt.subplots(figsize=(14, 8))
-        fig.patch.set_facecolor('white')  # Use white instead of none for compatibility
+        fig.patch.set_facecolor('none')  # Use white instead of none for compatibility
         
         # FPS line (primary - in front)
         ax1.set_xlabel('Time (minutes)', fontsize=12, fontweight='bold', color='black')
@@ -100,7 +100,7 @@ class GamingChartGenerator:
         
         # Styling
         ax1.grid(True, alpha=0.3, linestyle='--')
-        ax1.set_facecolor('#f8f9fa')
+        ax1.set_facecolor('#none')
         
         # Legend
         lines1, labels1 = ax1.get_legend_handles_labels()
