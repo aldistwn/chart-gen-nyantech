@@ -70,11 +70,11 @@ class GamingChartGenerator:
             return False
     
     def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color):
-        """Generate professional gaming chart"""
+        """Generate professional gaming chart with transparent background"""
         
-        # Create figure
+        # Create figure with transparent background
         fig, ax1 = plt.subplots(figsize=(14, 8))
-        fig.patch.set_facecolor('none')  # Use white instead of none for compatibility
+        fig.patch.set_facecolor('none')  # Transparent figure background
         
         # FPS line (primary - in front)
         ax1.set_xlabel('Time (minutes)', fontsize=12, fontweight='bold', color='black')
@@ -93,32 +93,30 @@ class GamingChartGenerator:
         ax2.tick_params(axis='y', labelcolor='black', labelsize=10)
         ax2.set_ylim(0, 100)
         
-        # Professional 3-line title
+        # Professional 3-line title with white color for overlay
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
-        plt.suptitle(title_text, fontsize=16, fontweight='bold', y=0.98, color='white')
+        plt.suptitle(title_text, fontsize=16, fontweight='bold', y=0.92, color='white')
         plt.subplots_adjust(top=0.85)
         
-        # Styling
-        ax1.grid(True, alpha=0.3, linestyle='--')
-        ax1.set_facecolor('#none')
+        # Styling with transparent background
+        ax1.grid(True, alpha=0.3, linestyle='--', color='white')
+        ax1.set_facecolor('none')  # Transparent chart area
         
         # Legend
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         legend = ax1.legend(lines1 + lines2, labels1 + labels2, 
-                          loc='upper right', framealpha=0.9, fancybox=True,
+                          loc='upper right', framealpha=0.8, fancybox=True,
                           facecolor='white', edgecolor='gray')
         
         for text in legend.get_texts():
             text.set_color('black')
         
-        # Clean spines
+        # Hide spines for cleaner transparent look
         for spine in ax1.spines.values():
-            spine.set_color('black')
-            spine.set_linewidth(0.8)
+            spine.set_visible(False)
         for spine in ax2.spines.values():
-            spine.set_color('black')
-            spine.set_linewidth(0.8)
+            spine.set_visible(False)
         
         plt.tight_layout()
         return fig
@@ -220,10 +218,10 @@ def main():
                 # Download section
                 st.header("💾 Export Results")
                 
-                # PNG download only (removed PowerPoint to avoid dependency issues)
+                # PNG download with transparent background
                 img_buffer = io.BytesIO()
                 chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
-                                 facecolor='white', edgecolor='none')
+                                 facecolor='none', edgecolor='none', transparent=True)
                 img_buffer.seek(0)
                 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
