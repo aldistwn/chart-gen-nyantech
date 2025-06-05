@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 import io
 from datetime import datetime
+from scipy.signal import savgol_filter
 
 # Page configuration
 st.set_page_config(
@@ -14,6 +16,7 @@ st.set_page_config(
 class GamingChartGenerator:
     def __init__(self):
         self.data = None
+        self.smoothed_data = None
     
     def load_csv_data(self, uploaded_file):
         """Load CSV with smart detection"""
@@ -69,38 +72,122 @@ class GamingChartGenerator:
             st.error(f"❌ Error loading CSV: {e}")
             return False
     
-    def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color):
-        """Generate professional gaming chart with transparent background - 1920x1080"""
+    def apply_savgol_filter(self, fps_window=21, fps_poly=3, cpu_window=21, cpu_poly=3, 
+                           enable_fps=True, enable_cpu=True):
+        """Apply Savitzky-Golay filter untuk smoothing data FPS dan CPU secara terpisah"""
+        if self.data is None:
+            return False
+        
+        try:
+            # Copy original data
+            self.smoothed_data = self.data.copy()
+            
+            # Apply FPS filter if enabled
+            if enable_fps:
+                # Pastikan window size ganjil dan tidak lebih besar dari data
+                fps_window = min(fps_window, len(self.data))
+                if fps_window % 2 == 0:
+                    fps_window -= 1
+                fps_window = max(fps_window, 5)  # Minimum window size
+                
+                if len(self.data['FPS'].dropna()) >= fps_window:
+                    self.smoothed_data['FPS_Smooth'] = savgol_filter(
+                        self.data['FPS'], 
+                        window_length=fps_window, 
+                        polyorder=min(fps_poly, fps_window-1)
+                    )
+                else:
+                    self.smoothed_data['FPS_Smooth'] = self.data['FPS']
+            else:
+                # Use original FPS data if filter disabled
+                self.smoothed_data['FPS_Smooth'] = self.data['FPS']
+            
+            # Apply CPU filter if enabled
+            if enable_cpu:
+                # Pastikan window size ganjil dan tidak lebih besar dari data
+                cpu_window = min(cpu_window, len(self.data))
+                if cpu_window % 2 == 0:
+                    cpu_window -= 1
+                cpu_window = max(cpu_window, 5)  # Minimum window size
+                
+                if len(self.data['CPU(%)'].dropna()) >= cpu_window:
+                    self.smoothed_data['CPU_Smooth'] = savgol_filter(
+                        self.data['CPU(%)'], 
+                        window_length=cpu_window, 
+                        polyorder=min(cpu_poly, cpu_window-1)
+                    )
+                else:
+                    self.smoothed_data['CPU_Smooth'] = self.data['CPU(%)']
+            else:
+                # Use original CPU data if filter disabled
+                self.smoothed_data['CPU_Smooth'] = self.data['CPU(%)']
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"❌ Error applying Savitzky-Golay filter: {e}")
+            return False
+    
+    def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color, 
+                    show_original=True, show_smoothed=True, enable_fps_filter=True, enable_cpu_filter=True):
+        """Generate professional gaming chart dengan opsi smoothing terpisah untuk FPS dan CPU"""
         
         # Create figure with 1920x1080 resolution (Full HD)
         fig, ax1 = plt.subplots(figsize=(19.2, 10.8))  # 1920x1080 pixels at 100 DPI
         fig.patch.set_facecolor('none')  # Transparent figure background
         
-        # FPS line (primary - in front)
+        # Setup axes
         ax1.set_xlabel('Time (minutes)', fontsize=12, fontweight='bold', color='black')
         ax1.set_ylabel('FPS', color='black', fontsize=12, fontweight='bold')
-        ax1.plot(self.data['TimeMinutes'], self.data['FPS'], 
-                color=fps_color, linewidth=1.5, label='FPS', alpha=0.9, zorder=3)
         ax1.tick_params(axis='y', labelcolor='black', labelsize=10)
         ax1.tick_params(axis='x', labelcolor='black', labelsize=10)
-        ax1.set_ylim(0, max(self.data['FPS']) * 1.1)
         
-        # CPU line (secondary - behind)
         ax2 = ax1.twinx()
         ax2.set_ylabel('CPU Usage (%)', color='black', fontsize=12, fontweight='bold')
-        ax2.plot(self.data['TimeMinutes'], self.data['CPU(%)'], 
-                color=cpu_color, linewidth=1.5, label='CPU(%)', alpha=0.9, zorder=2)
         ax2.tick_params(axis='y', labelcolor='black', labelsize=10)
         ax2.set_ylim(0, 100)
         
-        # Professional 3-line title with white color for overlay
+        # Plot data
+        time_data = self.data['TimeMinutes']
+        
+        # Original data (lebih transparan jika smoothed ditampilkan)
+        if show_original:
+            alpha_original = 0.3 if show_smoothed else 0.9
+            linestyle_original = '--' if show_smoothed else '-'
+            
+            ax1.plot(time_data, self.data['FPS'], 
+                    color=fps_color, linewidth=1, label='FPS (Original)', 
+                    alpha=alpha_original, zorder=2, linestyle=linestyle_original)
+            ax2.plot(time_data, self.data['CPU(%)'], 
+                    color=cpu_color, linewidth=1, label='CPU (Original)', 
+                    alpha=alpha_original, zorder=1, linestyle=linestyle_original)
+        
+        # Smoothed data - dengan label yang menunjukkan status filter
+        if show_smoothed and self.smoothed_data is not None:
+            # FPS smoothed line
+            fps_label = 'FPS (Smoothed)' if enable_fps_filter else 'FPS (Original)'
+            ax1.plot(time_data, self.smoothed_data['FPS_Smooth'], 
+                    color=fps_color, linewidth=2.5, label=fps_label, 
+                    alpha=0.9, zorder=4)
+            
+            # CPU smoothed line
+            cpu_label = 'CPU (Smoothed)' if enable_cpu_filter else 'CPU (Original)'
+            ax2.plot(time_data, self.smoothed_data['CPU_Smooth'], 
+                    color=cpu_color, linewidth=2.5, label=cpu_label, 
+                    alpha=0.9, zorder=3)
+        
+        # Set FPS axis limits
+        fps_max = max(self.data['FPS']) * 1.1
+        ax1.set_ylim(0, fps_max)
+        
+        # Professional 3-line title
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
         plt.suptitle(title_text, fontsize=24, fontweight='bold', y=0.98, color='white')
         plt.subplots_adjust(top=0.85)
         
-        # Styling with transparent background
+        # Styling
         ax1.grid(True, alpha=0.3, linestyle='--', color='white')
-        ax1.set_facecolor('none')  # Transparent chart area
+        ax1.set_facecolor('none')
         
         # Legend
         lines1, labels1 = ax1.get_legend_handles_labels()
@@ -112,7 +199,7 @@ class GamingChartGenerator:
         for text in legend.get_texts():
             text.set_color('black')
         
-        # Hide spines for cleaner transparent look
+        # Hide spines
         for spine in ax1.spines.values():
             spine.set_visible(False)
         for spine in ax2.spines.values():
@@ -121,13 +208,20 @@ class GamingChartGenerator:
         plt.tight_layout()
         return fig
     
-    def calculate_stats(self):
+    def calculate_stats(self, use_smoothed=False):
         """Calculate gaming performance statistics"""
         if self.data is None:
             return {}
         
-        fps_data = self.data['FPS'].dropna()
-        cpu_data = self.data['CPU(%)'].dropna()
+        # Pilih data yang akan digunakan untuk statistik
+        if use_smoothed and self.smoothed_data is not None:
+            fps_data = self.smoothed_data['FPS_Smooth'].dropna()
+            cpu_data = self.smoothed_data['CPU_Smooth'].dropna()
+            data_type = "(Smoothed)"
+        else:
+            fps_data = self.data['FPS'].dropna()
+            cpu_data = self.data['CPU(%)'].dropna()
+            data_type = "(Original)"
         
         # Performance grading
         avg_fps = fps_data.mean()
@@ -142,6 +236,7 @@ class GamingChartGenerator:
         
         return {
             'grade': grade,
+            'data_type': data_type,
             'duration': round(len(self.data) / 60, 1),
             'avg_fps': round(avg_fps, 1),
             'min_fps': round(fps_data.min(), 1),
@@ -155,7 +250,7 @@ class GamingChartGenerator:
 def main():
     # Header
     st.title("🎮 Gaming Performance Chart Generator")
-    st.markdown("Transform your gaming logs into professional performance charts")
+    st.markdown("Transform your gaming logs into professional performance charts with **Savitzky-Golay smoothing**")
     
     # Initialize
     generator = GamingChartGenerator()
@@ -170,6 +265,45 @@ def main():
         st.header("🎨 Chart Colors")
         fps_color = st.color_picker("FPS Color", "#FF6600")
         cpu_color = st.color_picker("CPU Color", "#4A90E2")
+        
+        st.header("📊 Display Options")
+        show_original = st.checkbox("Show Original Data", value=True)
+        show_smoothed = st.checkbox("Show Smoothed Data", value=True)
+        
+        st.header("🔧 Savitzky-Golay Filter")
+        st.markdown("**FPS Smoothing:**")
+        enable_fps_filter = st.toggle("🎯 Enable FPS Smoothing", value=True,
+                                     help="Turn on/off FPS data smoothing")
+        
+        if enable_fps_filter:
+            fps_window = st.slider("FPS Window Size", min_value=5, max_value=51, value=21, step=2,
+                                  help="Larger values = more smoothing")
+            fps_poly = st.slider("FPS Polynomial Order", min_value=1, max_value=5, value=3,
+                                help="Higher order = better fit to curves")
+        else:
+            fps_window = 21
+            fps_poly = 3
+            st.info("ℹ️ FPS smoothing disabled - using original FPS data")
+        
+        st.markdown("**CPU Smoothing:**")
+        enable_cpu_filter = st.toggle("🖥️ Enable CPU Smoothing", value=True,
+                                     help="Turn on/off CPU usage data smoothing")
+        
+        if enable_cpu_filter:
+            cpu_window = st.slider("CPU Window Size", min_value=5, max_value=51, value=21, step=2,
+                                  help="Larger values = more smoothing")
+            cpu_poly = st.slider("CPU Polynomial Order", min_value=1, max_value=5, value=3,
+                                help="Higher order = better fit to curves")
+        else:
+            cpu_window = 21
+            cpu_poly = 3
+            st.info("ℹ️ CPU smoothing disabled - using original CPU data")
+        
+        # Statistics option - only show if at least one filter is enabled
+        if enable_fps_filter or enable_cpu_filter:
+            use_smoothed_stats = st.checkbox("Use Smoothed Data for Statistics", value=True)
+        else:
+            use_smoothed_stats = False
     
     # File upload
     st.header("📁 Upload Gaming Log CSV")
@@ -179,8 +313,22 @@ def main():
         with st.spinner('🔄 Analyzing gaming data...'):
             if generator.load_csv_data(uploaded_file):
                 
-                # Success message
-                st.success("🎉 Gaming log loaded successfully!")
+                # Apply Savitzky-Golay filter dengan kontrol terpisah
+                with st.spinner('🔧 Applying smoothing filters...'):
+                    if generator.apply_savgol_filter(fps_window, fps_poly, cpu_window, cpu_poly, 
+                                                   enable_fps_filter, enable_cpu_filter):
+                        # Custom success message berdasarkan filter yang aktif
+                        if enable_fps_filter and enable_cpu_filter:
+                            st.success("🎉 Gaming log loaded with FPS and CPU smoothing!")
+                        elif enable_fps_filter:
+                            st.success("🎯 Gaming log loaded with FPS smoothing only!")
+                        elif enable_cpu_filter:
+                            st.success("🖥️ Gaming log loaded with CPU smoothing only!")
+                        else:
+                            st.success("🎉 Gaming log loaded! (No smoothing applied)")
+                    else:
+                        st.warning("⚠️ Gaming log loaded but smoothing failed. Using original data only.")
+                        show_smoothed = False  # Force disable smoothed display if filter failed
                 
                 # Quick stats
                 col1, col2, col3, col4 = st.columns(4)
@@ -196,14 +344,30 @@ def main():
                 # Generate chart
                 st.header("📊 Performance Chart")
                 
-                with st.spinner('🎨 Creating professional chart...'):
-                    chart_fig = generator.create_chart(game_title, game_settings, 
-                                                     game_mode, fps_color, cpu_color)
-                    st.pyplot(chart_fig)
+                if not show_original and not show_smoothed:
+                    st.warning("⚠️ Please select at least one display option (Original or Smoothed)")
+                else:
+                    with st.spinner('🎨 Creating professional chart...'):
+                        chart_fig = generator.create_chart(game_title, game_settings, game_mode, 
+                                                         fps_color, cpu_color, show_original, show_smoothed,
+                                                         enable_fps_filter, enable_cpu_filter)
+                        st.pyplot(chart_fig)
                 
                 # Performance analysis
-                stats = generator.calculate_stats()
-                st.header("📈 Performance Analysis")
+                stats = generator.calculate_stats(use_smoothed_stats and (enable_fps_filter or enable_cpu_filter))
+                
+                # Dynamic stats label
+                if use_smoothed_stats and (enable_fps_filter or enable_cpu_filter):
+                    if enable_fps_filter and enable_cpu_filter:
+                        stats_label = "(FPS & CPU Smoothed)"
+                    elif enable_fps_filter:
+                        stats_label = "(FPS Smoothed)"
+                    elif enable_cpu_filter:
+                        stats_label = "(CPU Smoothed)"
+                else:
+                    stats_label = "(Original Data)"
+                
+                st.header(f"📈 Performance Analysis {stats_label}")
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -215,25 +379,61 @@ def main():
                 with col4:
                     st.metric("Frame Drops", stats['frame_drops'])
                 
+                # Filter info - show information for active filters
+                if (enable_fps_filter or enable_cpu_filter) and generator.smoothed_data is not None:
+                    with st.expander("🔧 Active Smoothing Filters"):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if enable_fps_filter:
+                                st.markdown("**🎯 FPS Filter (ACTIVE):**")
+                                st.write(f"• Window Size: {fps_window}")
+                                st.write(f"• Polynomial Order: {fps_poly}")
+                            else:
+                                st.markdown("**🎯 FPS Filter (DISABLED)**")
+                                st.write("• Using original FPS data")
+                        
+                        with col2:
+                            if enable_cpu_filter:
+                                st.markdown("**🖥️ CPU Filter (ACTIVE):**")
+                                st.write(f"• Window Size: {cpu_window}")
+                                st.write(f"• Polynomial Order: {cpu_poly}")
+                            else:
+                                st.markdown("**🖥️ CPU Filter (DISABLED)**")
+                                st.write("• Using original CPU data")
+                        
+                        st.info("💡 **Savitzky-Golay Filter** mengurangi noise sambil mempertahankan bentuk kurva asli. Anda dapat mengaktifkan filter secara terpisah untuk FPS dan CPU.")
+                
                 # Download section
                 st.header("💾 Export Results")
                 
-                # PNG download with transparent background
-                img_buffer = io.BytesIO()
-                chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
-                                 facecolor='none', edgecolor='none', transparent=True)
-                img_buffer.seek(0)
-                
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                png_filename = f"{game_title.replace(' ', '_')}_chart_{timestamp}.png"
-                
-                st.download_button(
-                    label="📸 Download Chart (PNG)",
-                    data=img_buffer.getvalue(),
-                    file_name=png_filename,
-                    mime="image/png",
-                    use_container_width=True
-                )
+                # PNG download
+                if 'chart_fig' in locals():
+                    img_buffer = io.BytesIO()
+                    chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
+                                     facecolor='none', edgecolor='none', transparent=True)
+                    img_buffer.seek(0)
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    
+                    # Dynamic filename based on active filters
+                    filter_suffix = ""
+                    if enable_fps_filter and enable_cpu_filter:
+                        filter_suffix = "_fps_cpu_smoothed"
+                    elif enable_fps_filter:
+                        filter_suffix = "_fps_smoothed"
+                    elif enable_cpu_filter:
+                        filter_suffix = "_cpu_smoothed"
+                    
+                    png_filename = f"{game_title.replace(' ', '_')}{filter_suffix}_chart_{timestamp}.png"
+                    
+                    st.download_button(
+                        label="📸 Download Chart (PNG)",
+                        data=img_buffer.getvalue(),
+                        file_name=png_filename,
+                        mime="image/png",
+                        use_container_width=True
+                    )
     
     else:
         # Help section
@@ -252,17 +452,30 @@ def main():
             58,48.1,1,0
             62,42.8,0,0
             ```
+            """)
+        
+        with st.expander("🔧 About Savitzky-Golay Filter"):
+            st.markdown("""
+            **Savitzky-Golay Filter** adalah metode smoothing yang:
+            - ✅ Mengurangi noise dalam data
+            - ✅ Mempertahankan bentuk kurva asli
+            - ✅ Cocok untuk data gaming performance
+            - ✅ Dapat disesuaikan secara terpisah untuk FPS dan CPU
             
-            **Features:**
-            - ✅ Professional chart generation
-            - ✅ High-resolution PNG export  
-            - ✅ Gaming performance analysis
-            - ✅ Multiple CSV format support
+            **Parameter:**
+            - **Window Size**: Jumlah data point yang digunakan (lebih besar = lebih smooth)
+            - **Polynomial Order**: Tingkat polynomial untuk fitting (1-5)
+            
+            **Tips:**
+            - Window size ganjil dan minimal 5
+            - Polynomial order harus lebih kecil dari window size
+            - Untuk data noisy: window size besar, poly order rendah
+            - Untuk mempertahankan detail: window size kecil, poly order tinggi
             """)
         
         # Footer
         st.markdown("---")
-        st.markdown("Made with ❤️ for gaming performance analysis")
+        st.markdown("Made with ❤️ for gaming performance analysis | Enhanced with Savitzky-Golay smoothing")
 
 if __name__ == "__main__":
     main()
