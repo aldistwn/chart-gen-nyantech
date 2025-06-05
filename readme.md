@@ -1,24 +1,22 @@
 # 🎮 Gaming Performance Chart Generator
 
-A professional web application to analyze gaming performance logs and generate beautiful charts.
+Transform your gaming logs into professional performance charts with advanced Savitzky-Golay smoothing filters.
 
-## Features
-- 📊 Professional performance charts
-- 📈 Gaming performance analysis
-- 📄 PowerPoint report generation
-- 🖼️ Transparent PNG export
-- 🎮 Support for multiple games
+## ✨ Features
 
-## How to Use
-1. Visit the deployed application
-2. Upload your gaming log CSV file
-3. Configure game settings
-4. Generate and download charts
+- 📊 **Professional Charts**: Generate publication-ready performance charts
+- 🔧 **Savitzky-Golay Smoothing**: Separate filters for FPS and CPU data
+- 🎨 **Customizable**: Colors, settings, and display options
+- 📱 **Smart CSV Detection**: Auto-detect various CSV formats
+- 📈 **Performance Analysis**: Detailed statistics and grading
+- 💾 **High-Quality Export**: PNG export with transparent background
+- 🎯 **Gaming Optimized**: Built specifically for gaming performance data
 
-## CSV Format
-Your CSV should contain:
-- `FPS` column (frame rate data)
-- `CPU(%)` column (CPU usage data)
+## 🚀 Quick Start
 
-## Live Demo
-🔗 [Gaming Chart Generator](https://your-app-name.streamlit.app)
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/gaming-chart-generator.git
+cd gaming-chart-generator
