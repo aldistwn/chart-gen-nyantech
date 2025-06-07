@@ -1,5 +1,6 @@
 # 🎮 Gaming Performance Chart Generator
 
+Personal use only, made with AI
 <div align="center">
 
 ![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)
