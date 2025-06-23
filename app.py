@@ -84,8 +84,17 @@ class GamingChartGenerator:
             
             # Apply outlier removal if enabled
             if enable_outlier_removal:
+                st.info("🧹 Applying IQR outlier removal...")
+                
+                # Remove outliers from FPS
+                st.markdown("**FPS Outlier Removal:**")
                 self.smoothed_data['FPS'] = self.remove_outliers_iqr(self.data['FPS'], outlier_sensitivity)
+                
+                # Remove outliers from CPU
+                st.markdown("**CPU Outlier Removal:**")
                 self.smoothed_data['CPU(%)'] = self.remove_outliers_iqr(self.data['CPU(%)'], outlier_sensitivity)
+                
+                st.success("✅ IQR outlier removal completed!")
             
             # Apply FPS filter if enabled
             if enable_fps:
@@ -96,6 +105,7 @@ class GamingChartGenerator:
                 fps_window = max(fps_window, 5)  # Minimum window size
                 
                 if len(self.smoothed_data['FPS'].dropna()) >= fps_window:
+                    st.info(f"🎯 Applying FPS smoothing (window={fps_window}, poly={fps_poly})...")
                     self.smoothed_data['FPS_Smooth'] = savgol_filter(
                         self.smoothed_data['FPS'], 
                         window_length=fps_window, 
@@ -116,6 +126,7 @@ class GamingChartGenerator:
                 cpu_window = max(cpu_window, 5)  # Minimum window size
                 
                 if len(self.smoothed_data['CPU(%)'].dropna()) >= cpu_window:
+                    st.info(f"🖥️ Applying CPU smoothing (window={cpu_window}, poly={cpu_poly})...")
                     self.smoothed_data['CPU_Smooth'] = savgol_filter(
                         self.smoothed_data['CPU(%)'], 
                         window_length=cpu_window, 
@@ -136,9 +147,14 @@ class GamingChartGenerator:
     def remove_outliers_iqr(self, data, sensitivity='moderate'):
         """Remove outliers using IQR method"""
         try:
-            # Remove NaN values
+            # Convert to pandas Series if not already
+            if not isinstance(data, pd.Series):
+                data = pd.Series(data)
+            
+            # Remove NaN values for calculation
             clean_data = data.dropna()
             if len(clean_data) < 10:  # Need minimum data points
+                st.warning("⚠️ Not enough data points for outlier removal")
                 return data
             
             # Calculate IQR
@@ -158,20 +174,47 @@ class GamingChartGenerator:
             lower_bound = q1 - multiplier * iqr
             upper_bound = q3 + multiplier * iqr
             
-            # Replace outliers with interpolated values
-            result = data.copy()
-            outlier_mask = (data < lower_bound) | (data > upper_bound)
+            # Count outliers before removal
+            outlier_mask = (clean_data < lower_bound) | (clean_data > upper_bound)
+            outlier_count = outlier_mask.sum()
             
-            # Simple linear interpolation for outliers
-            if outlier_mask.any():
-                result = result.interpolate(method='linear')
-                # If still NaN at edges, use forward/backward fill
-                result = result.fillna(method='ffill').fillna(method='bfill')
+            # Show outlier detection info
+            st.info(f"🔍 IQR Detection: Q1={q1:.1f}, Q3={q3:.1f}, IQR={iqr:.1f}")
+            st.info(f"📊 Valid range: {lower_bound:.1f} - {upper_bound:.1f}")
+            st.info(f"🧹 Outliers found: {outlier_count} ({outlier_count/len(clean_data)*100:.1f}%)")
+            
+            if outlier_count == 0:
+                st.success("✅ No outliers detected - data is already clean!")
+                return data
+            
+            # Create result series
+            result = data.copy()
+            
+            # Replace outliers with NaN first
+            outlier_indices = data.index[outlier_mask.reindex(data.index, fill_value=False)]
+            result.loc[outlier_indices] = np.nan
+            
+            # Interpolate missing values
+            result = result.interpolate(method='linear', limit_direction='both')
+            
+            # Fill any remaining NaN values at edges
+            result = result.fillna(method='ffill').fillna(method='bfill')
+            
+            # Ensure no NaN values remain
+            if result.isna().any():
+                # Fallback: fill with median
+                result = result.fillna(clean_data.median())
+            
+            # Show results
+            new_min = result.min()
+            new_max = result.max()
+            st.success(f"✅ Outliers removed! New range: {new_min:.1f} - {new_max:.1f}")
             
             return result
             
         except Exception as e:
-            st.warning(f"⚠️ Outlier removal failed: {e}")
+            st.error(f"❌ Outlier removal failed: {e}")
+            st.info("🔄 Using original data instead")
             return data
     
     def create_chart(self, game_title, game_settings, game_mode, smartphone_name, fps_color, cpu_color, 
