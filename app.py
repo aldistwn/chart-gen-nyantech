@@ -192,16 +192,16 @@ class GamingChartGenerator:
         fps_max = max(self.data['FPS']) * 1.1
         ax1.set_ylim(0, fps_max)
         
-        # Professional 4-line title with smartphone name
-        title_text = f"{game_title}\n{game_settings}\n{game_mode}\n{smartphone_name}"
-        plt.suptitle(title_text, fontsize=22, fontweight='bold', y=0.98, color='white')
-        plt.subplots_adjust(top=0.82)
+        # Professional 3-line title (without smartphone name)
+        title_text = f"{game_title}\n{game_settings}\n{game_mode}"
+        plt.suptitle(title_text, fontsize=24, fontweight='bold', y=0.98, color='white')
+        plt.subplots_adjust(top=0.85)
         
         # Styling
         ax1.grid(True, alpha=0.3, linestyle='--', color='white')
         ax1.set_facecolor('none')
         
-        # Legend - menampilkan smartphone name, FPS dan CPU
+        # Legend - menampilkan smartphone name, FPS dan CPU dengan alignment kiri
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         
@@ -222,9 +222,10 @@ class GamingChartGenerator:
                               loc='upper right', framealpha=0.8, fancybox=True,
                               facecolor='white', edgecolor='gray')
             
-            # Style legend text
+            # Style legend text with left alignment
             for i, text in enumerate(legend.get_texts()):
                 text.set_color('black')
+                text.set_horizontalalignment('left')  # Rata kiri
                 if i == 0:  # Smartphone name - make it bold
                     text.set_fontweight('bold')
                     text.set_fontsize(11)
