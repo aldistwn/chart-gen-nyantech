@@ -201,7 +201,7 @@ class GamingChartGenerator:
         ax1.grid(True, alpha=0.3, linestyle='--', color='white')
         ax1.set_facecolor('none')
         
-        # Legend - hanya menampilkan FPS dan CPU
+        # Legend - menampilkan smartphone name, FPS dan CPU
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         
@@ -214,12 +214,22 @@ class GamingChartGenerator:
                 filtered_labels.append(label)
         
         if filtered_lines:  # Only create legend if there are labels
-            legend = ax1.legend(filtered_lines, filtered_labels, 
+            # Add smartphone name as first entry (invisible line)
+            legend_lines = [plt.Line2D([0], [0], color='none')] + filtered_lines
+            legend_labels = [smartphone_name] + filtered_labels
+            
+            legend = ax1.legend(legend_lines, legend_labels, 
                               loc='upper right', framealpha=0.8, fancybox=True,
                               facecolor='white', edgecolor='gray')
             
-            for text in legend.get_texts():
+            # Style legend text
+            for i, text in enumerate(legend.get_texts()):
                 text.set_color('black')
+                if i == 0:  # Smartphone name - make it bold
+                    text.set_fontweight('bold')
+                    text.set_fontsize(11)
+                else:  # FPS and CPU labels
+                    text.set_fontsize(10)
         
         # Hide spines
         for spine in ax1.spines.values():
