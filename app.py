@@ -128,7 +128,7 @@ class GamingChartGenerator:
             st.error(f"❌ Error applying Savitzky-Golay filter: {e}")
             return False
     
-    def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color, 
+    def create_chart(self, game_title, game_settings, game_mode, smartphone_name, fps_color, cpu_color, 
                     show_original=True, show_smoothed=True, enable_fps_filter=True, enable_cpu_filter=True):
         """Generate professional gaming chart dengan legend sederhana (hanya FPS dan CPU)"""
         
@@ -192,10 +192,10 @@ class GamingChartGenerator:
         fps_max = max(self.data['FPS']) * 1.1
         ax1.set_ylim(0, fps_max)
         
-        # Professional 3-line title
-        title_text = f"{game_title}\n{game_settings}\n{game_mode}"
-        plt.suptitle(title_text, fontsize=24, fontweight='bold', y=0.98, color='white')
-        plt.subplots_adjust(top=0.85)
+        # Professional 4-line title with smartphone name
+        title_text = f"{game_title}\n{game_settings}\n{game_mode}\n{smartphone_name}"
+        plt.suptitle(title_text, fontsize=22, fontweight='bold', y=0.98, color='white')
+        plt.subplots_adjust(top=0.82)
         
         # Styling
         ax1.grid(True, alpha=0.3, linestyle='--', color='white')
@@ -283,6 +283,7 @@ def main():
         game_title = st.text_input("Game Title", value="MOBILE LEGENDS")
         game_settings = st.text_input("Graphics Settings", value="ULTRA - 120 FPS")
         game_mode = st.text_input("Performance Mode", value="BOOST MODE")
+        smartphone_name = st.text_input("Smartphone Model", value="iPhone 15 Pro Max")
         
         st.header("🎨 Chart Colors")
         fps_color = st.color_picker("FPS Color", "#FF6600")
@@ -370,7 +371,7 @@ def main():
                     st.warning("⚠️ Please select at least one display option (Original or Smoothed)")
                 else:
                     with st.spinner('🎨 Creating professional chart...'):
-                        chart_fig = generator.create_chart(game_title, game_settings, game_mode, 
+                        chart_fig = generator.create_chart(game_title, game_settings, game_mode, smartphone_name,
                                                          fps_color, cpu_color, show_original, show_smoothed,
                                                          enable_fps_filter, enable_cpu_filter)
                         st.pyplot(chart_fig)
