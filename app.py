@@ -73,8 +73,8 @@ class GamingChartGenerator:
             return False
     
     def apply_savgol_filter(self, fps_window=21, fps_poly=3, cpu_window=21, cpu_poly=3, 
-                           enable_fps=True, enable_cpu=True):
-        """Apply Savitzky-Golay filter untuk smoothing data FPS dan CPU secara terpisah"""
+                           enable_fps=True, enable_cpu=True, enable_outlier_removal=False, outlier_sensitivity='moderate'):
+        """Apply Savitzky-Golay filter dan IQR outlier removal untuk smoothing data FPS dan CPU secara terpisah"""
         if self.data is None:
             return False
         
@@ -82,51 +82,97 @@ class GamingChartGenerator:
             # Copy original data
             self.smoothed_data = self.data.copy()
             
+            # Apply outlier removal if enabled
+            if enable_outlier_removal:
+                self.smoothed_data['FPS'] = self.remove_outliers_iqr(self.data['FPS'], outlier_sensitivity)
+                self.smoothed_data['CPU(%)'] = self.remove_outliers_iqr(self.data['CPU(%)'], outlier_sensitivity)
+            
             # Apply FPS filter if enabled
             if enable_fps:
                 # Pastikan window size ganjil dan tidak lebih besar dari data
-                fps_window = min(fps_window, len(self.data))
+                fps_window = min(fps_window, len(self.smoothed_data))
                 if fps_window % 2 == 0:
                     fps_window -= 1
                 fps_window = max(fps_window, 5)  # Minimum window size
                 
-                if len(self.data['FPS'].dropna()) >= fps_window:
+                if len(self.smoothed_data['FPS'].dropna()) >= fps_window:
                     self.smoothed_data['FPS_Smooth'] = savgol_filter(
-                        self.data['FPS'], 
+                        self.smoothed_data['FPS'], 
                         window_length=fps_window, 
                         polyorder=min(fps_poly, fps_window-1)
                     )
                 else:
-                    self.smoothed_data['FPS_Smooth'] = self.data['FPS']
+                    self.smoothed_data['FPS_Smooth'] = self.smoothed_data['FPS']
             else:
-                # Use original FPS data if filter disabled
-                self.smoothed_data['FPS_Smooth'] = self.data['FPS']
+                # Use FPS data (with or without outlier removal)
+                self.smoothed_data['FPS_Smooth'] = self.smoothed_data['FPS']
             
             # Apply CPU filter if enabled
             if enable_cpu:
                 # Pastikan window size ganjil dan tidak lebih besar dari data
-                cpu_window = min(cpu_window, len(self.data))
+                cpu_window = min(cpu_window, len(self.smoothed_data))
                 if cpu_window % 2 == 0:
                     cpu_window -= 1
                 cpu_window = max(cpu_window, 5)  # Minimum window size
                 
-                if len(self.data['CPU(%)'].dropna()) >= cpu_window:
+                if len(self.smoothed_data['CPU(%)'].dropna()) >= cpu_window:
                     self.smoothed_data['CPU_Smooth'] = savgol_filter(
-                        self.data['CPU(%)'], 
+                        self.smoothed_data['CPU(%)'], 
                         window_length=cpu_window, 
                         polyorder=min(cpu_poly, cpu_window-1)
                     )
                 else:
-                    self.smoothed_data['CPU_Smooth'] = self.data['CPU(%)']
+                    self.smoothed_data['CPU_Smooth'] = self.smoothed_data['CPU(%)']
             else:
-                # Use original CPU data if filter disabled
-                self.smoothed_data['CPU_Smooth'] = self.data['CPU(%)']
+                # Use CPU data (with or without outlier removal)
+                self.smoothed_data['CPU_Smooth'] = self.smoothed_data['CPU(%)']
             
             return True
             
         except Exception as e:
-            st.error(f"❌ Error applying Savitzky-Golay filter: {e}")
+            st.error(f"❌ Error applying filters: {e}")
             return False
+    
+    def remove_outliers_iqr(self, data, sensitivity='moderate'):
+        """Remove outliers using IQR method"""
+        try:
+            # Remove NaN values
+            clean_data = data.dropna()
+            if len(clean_data) < 10:  # Need minimum data points
+                return data
+            
+            # Calculate IQR
+            q1 = clean_data.quantile(0.25)
+            q3 = clean_data.quantile(0.75)
+            iqr = q3 - q1
+            
+            # Set multiplier based on sensitivity
+            multipliers = {
+                'conservative': 2.0,  # Keep more data
+                'moderate': 1.5,      # Balanced
+                'aggressive': 1.0     # Remove more outliers
+            }
+            multiplier = multipliers.get(sensitivity, 1.5)
+            
+            # Calculate bounds
+            lower_bound = q1 - multiplier * iqr
+            upper_bound = q3 + multiplier * iqr
+            
+            # Replace outliers with interpolated values
+            result = data.copy()
+            outlier_mask = (data < lower_bound) | (data > upper_bound)
+            
+            # Simple linear interpolation for outliers
+            if outlier_mask.any():
+                result = result.interpolate(method='linear')
+                # If still NaN at edges, use forward/backward fill
+                result = result.fillna(method='ffill').fillna(method='bfill')
+            
+            return result
+            
+        except Exception as e:
+            st.warning(f"⚠️ Outlier removal failed: {e}")
+            return data
     
     def create_chart(self, game_title, game_settings, game_mode, smartphone_name, fps_color, cpu_color, 
                     show_original=True, show_smoothed=True, enable_fps_filter=True, enable_cpu_filter=True):
@@ -333,6 +379,29 @@ def main():
             cpu_poly = 3
             st.info("ℹ️ CPU smoothing disabled - using original CPU data")
         
+        st.header("🧹 Outlier Removal (IQR Method)")
+        enable_outlier_removal = st.toggle("🚫 Remove Extreme FPS Drops", value=False,
+                                          help="Remove extreme FPS drops and spikes using IQR statistical method")
+        
+        if enable_outlier_removal:
+            outlier_sensitivity = st.select_slider(
+                "Outlier Sensitivity",
+                options=['conservative', 'moderate', 'aggressive'],
+                value='moderate',
+                help="Conservative = keep more data, Aggressive = remove more outliers"
+            )
+            
+            # Explanation based on sensitivity
+            if outlier_sensitivity == 'conservative':
+                st.info("🛡️ **Conservative**: Only removes very extreme outliers (2.0 × IQR)")
+            elif outlier_sensitivity == 'moderate':
+                st.info("⚖️ **Moderate**: Balanced removal of outliers (1.5 × IQR)")
+            else:
+                st.info("🔥 **Aggressive**: Removes more outliers for cleaner chart (1.0 × IQR)")
+        else:
+            outlier_sensitivity = 'moderate'
+            st.info("ℹ️ Outlier removal disabled - keeping all original data")
+        
         # Statistics option - only show if at least one filter is enabled
         if enable_fps_filter or enable_cpu_filter:
             use_smoothed_stats = st.checkbox("Use Smoothed Data for Statistics", value=True)
@@ -347,21 +416,25 @@ def main():
         with st.spinner('🔄 Analyzing gaming data...'):
             if generator.load_csv_data(uploaded_file):
                 
-                # Apply Savitzky-Golay filter dengan kontrol terpisah
-                with st.spinner('🔧 Applying smoothing filters...'):
+                # Apply Savitzky-Golay filter dengan kontrol terpisah + outlier removal
+                with st.spinner('🔧 Applying smoothing filters and outlier removal...'):
                     if generator.apply_savgol_filter(fps_window, fps_poly, cpu_window, cpu_poly, 
-                                                   enable_fps_filter, enable_cpu_filter):
+                                                   enable_fps_filter, enable_cpu_filter, enable_outlier_removal, outlier_sensitivity):
                         # Custom success message berdasarkan filter yang aktif
-                        if enable_fps_filter and enable_cpu_filter:
-                            st.success("🎉 Gaming log loaded with FPS and CPU smoothing!")
-                        elif enable_fps_filter:
-                            st.success("🎯 Gaming log loaded with FPS smoothing only!")
-                        elif enable_cpu_filter:
-                            st.success("🖥️ Gaming log loaded with CPU smoothing only!")
+                        filter_messages = []
+                        if enable_outlier_removal:
+                            filter_messages.append(f"outlier removal ({outlier_sensitivity})")
+                        if enable_fps_filter:
+                            filter_messages.append("FPS smoothing")
+                        if enable_cpu_filter:
+                            filter_messages.append("CPU smoothing")
+                        
+                        if filter_messages:
+                            st.success(f"🎉 Gaming log processed with {', '.join(filter_messages)}!")
                         else:
-                            st.success("🎉 Gaming log loaded! (No smoothing applied)")
+                            st.success("🎉 Gaming log loaded! (No processing applied)")
                     else:
-                        st.warning("⚠️ Gaming log loaded but smoothing failed. Using original data only.")
+                        st.warning("⚠️ Gaming log loaded but processing failed. Using original data only.")
                         show_smoothed = False  # Force disable smoothed display if filter failed
                 
                 # Quick stats
@@ -414,8 +487,34 @@ def main():
                     st.metric("Frame Drops", stats['frame_drops'])
                 
                 # Filter info - show information for active filters
-                if (enable_fps_filter or enable_cpu_filter) and generator.smoothed_data is not None:
-                    with st.expander("🔧 Active Smoothing Filters"):
+                if (enable_fps_filter or enable_cpu_filter or enable_outlier_removal) and generator.smoothed_data is not None:
+                    with st.expander("🔧 Active Processing Filters"):
+                        
+                        # Outlier removal info
+                        if enable_outlier_removal:
+                            st.markdown("**🧹 Outlier Removal (ACTIVE):**")
+                            st.write(f"• Method: IQR (Interquartile Range)")
+                            st.write(f"• Sensitivity: {outlier_sensitivity.title()}")
+                            
+                            # Calculate and show outlier stats
+                            if 'FPS' in generator.data.columns:
+                                original_fps = generator.data['FPS'].dropna()
+                                processed_fps = generator.smoothed_data['FPS'].dropna() if 'FPS' in generator.smoothed_data.columns else original_fps
+                                
+                                # Simple outlier detection for display
+                                q1 = original_fps.quantile(0.25)
+                                q3 = original_fps.quantile(0.75)
+                                iqr = q3 - q1
+                                multipliers = {'conservative': 2.0, 'moderate': 1.5, 'aggressive': 1.0}
+                                mult = multipliers[outlier_sensitivity]
+                                lower_bound = q1 - mult * iqr
+                                upper_bound = q3 + mult * iqr
+                                
+                                outliers_detected = len(original_fps[(original_fps < lower_bound) | (original_fps > upper_bound)])
+                                st.write(f"• FPS Outliers Detected: {outliers_detected} ({outliers_detected/len(original_fps)*100:.1f}%)")
+                                st.write(f"• Valid FPS Range: {lower_bound:.1f} - {upper_bound:.1f}")
+                            st.write("")
+                        
                         col1, col2 = st.columns(2)
                         
                         with col1:
@@ -425,7 +524,7 @@ def main():
                                 st.write(f"• Polynomial Order: {fps_poly}")
                             else:
                                 st.markdown("**🎯 FPS Filter (DISABLED)**")
-                                st.write("• Using original FPS data")
+                                st.write("• Using processed FPS data")
                         
                         with col2:
                             if enable_cpu_filter:
@@ -434,9 +533,11 @@ def main():
                                 st.write(f"• Polynomial Order: {cpu_poly}")
                             else:
                                 st.markdown("**🖥️ CPU Filter (DISABLED)**")
-                                st.write("• Using original CPU data")
+                                st.write("• Using processed CPU data")
                         
-                        st.info("💡 **Savitzky-Golay Filter** mengurangi noise sambil mempertahankan bentuk kurva asli. Anda dapat mengaktifkan filter secara terpisah untuk FPS dan CPU.")
+                        st.info("💡 **Processing Order**: 1) Remove outliers → 2) Apply Savitzky-Golay smoothing. IQR method menghilangkan extreme drops/spikes, lalu smoothing mengurangi noise kecil.")
+                else:
+                    st.info("ℹ️ No processing filters active - displaying original data")
                 
                 # Download section
                 st.header("💾 Export Results")
@@ -452,12 +553,16 @@ def main():
                     
                     # Dynamic filename based on active filters
                     filter_suffix = ""
-                    if enable_fps_filter and enable_cpu_filter:
-                        filter_suffix = "_fps_cpu_smoothed"
-                    elif enable_fps_filter:
-                        filter_suffix = "_fps_smoothed"
-                    elif enable_cpu_filter:
-                        filter_suffix = "_cpu_smoothed"
+                    filters_active = []
+                    if enable_outlier_removal:
+                        filters_active.append(f"outlier_{outlier_sensitivity}")
+                    if enable_fps_filter:
+                        filters_active.append("fps_smooth")
+                    if enable_cpu_filter:
+                        filters_active.append("cpu_smooth")
+                    
+                    if filters_active:
+                        filter_suffix = "_" + "_".join(filters_active)
                     
                     png_filename = f"{game_title.replace(' ', '_')}{filter_suffix}_chart_{timestamp}.png"
                     
@@ -486,6 +591,27 @@ def main():
             58,48.1,1,0
             62,42.8,0,0
             ```
+            """)
+        
+        with st.expander("🧹 About IQR Outlier Removal"):
+            st.markdown("""
+            **IQR (Interquartile Range) Method** menghilangkan extreme FPS drops:
+            - ✅ Mendeteksi dan menghilangkan FPS drops/spikes yang tidak normal
+            - ✅ Berdasarkan statistik robust (tidak terpengaruh outlier)
+            - ✅ Menggunakan interpolasi untuk mengisi gap yang dihilangkan
+            - ✅ Membuat chart lebih clean dan mudah dibaca
+            
+            **Cara Kerja:**
+            1. Hitung Q1 (25th percentile) dan Q3 (75th percentile)
+            2. IQR = Q3 - Q1
+            3. Lower Bound = Q1 - (multiplier × IQR)
+            4. Upper Bound = Q3 + (multiplier × IQR)
+            5. Data di luar range dianggap outlier dan di-interpolasi
+            
+            **Sensitivity Levels:**
+            - **Conservative (2.0×)**: Hapus cuma yang sangat ekstrem
+            - **Moderate (1.5×)**: Standard statistical outlier detection
+            - **Aggressive (1.0×)**: Hapus lebih banyak untuk hasil lebih smooth
             """)
         
         with st.expander("🔧 About Savitzky-Golay Filter"):
