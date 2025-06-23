@@ -287,16 +287,16 @@ class GamingChartGenerator:
         plt.tight_layout()
         return fig
     
-    def calculate_stats(self, use_smoothed=False):
+    def calculate_stats(self, use_processed=False):
         """Calculate gaming performance statistics"""
         if self.data is None:
             return {}
         
         # Pilih data yang akan digunakan untuk statistik
-        if use_smoothed and self.smoothed_data is not None:
+        if use_processed and self.smoothed_data is not None:
             fps_data = self.smoothed_data['FPS_Smooth'].dropna()
             cpu_data = self.smoothed_data['CPU_Smooth'].dropna()
-            data_type = "(Smoothed)"
+            data_type = "(Processed)"
         else:
             fps_data = self.data['FPS'].dropna()
             cpu_data = self.data['CPU(%)'].dropna()
@@ -403,8 +403,9 @@ def main():
             st.info("ℹ️ Outlier removal disabled - keeping all original data")
         
         # Statistics option - only show if at least one filter is enabled
-        if enable_fps_filter or enable_cpu_filter:
-            use_smoothed_stats = st.checkbox("Use Smoothed Data for Statistics", value=True)
+        if enable_fps_filter or enable_cpu_filter or enable_outlier_removal:
+            use_smoothed_stats = st.checkbox("Use Processed Data for Statistics", value=True,
+                                            help="Use data after outlier removal and/or smoothing for statistics calculation")
         else:
             use_smoothed_stats = False
     
@@ -461,16 +462,20 @@ def main():
                         st.pyplot(chart_fig)
                 
                 # Performance analysis
-                stats = generator.calculate_stats(use_smoothed_stats and (enable_fps_filter or enable_cpu_filter))
+                stats = generator.calculate_stats(use_smoothed_stats and (enable_fps_filter or enable_cpu_filter or enable_outlier_removal))
                 
                 # Dynamic stats label
-                if use_smoothed_stats and (enable_fps_filter or enable_cpu_filter):
-                    if enable_fps_filter and enable_cpu_filter:
-                        stats_label = "(FPS & CPU Smoothed)"
-                    elif enable_fps_filter:
-                        stats_label = "(FPS Smoothed)"
-                    elif enable_cpu_filter:
-                        stats_label = "(CPU Smoothed)"
+                active_processing = []
+                if use_smoothed_stats:
+                    if enable_outlier_removal:
+                        active_processing.append("Outlier Removed")
+                    if enable_fps_filter:
+                        active_processing.append("FPS Smoothed")
+                    if enable_cpu_filter:
+                        active_processing.append("CPU Smoothed")
+                
+                if active_processing:
+                    stats_label = f"({', '.join(active_processing)})"
                 else:
                     stats_label = "(Original Data)"
                 
