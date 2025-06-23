@@ -130,7 +130,7 @@ class GamingChartGenerator:
     
     def create_chart(self, game_title, game_settings, game_mode, fps_color, cpu_color, 
                     show_original=True, show_smoothed=True, enable_fps_filter=True, enable_cpu_filter=True):
-        """Generate professional gaming chart dengan opsi smoothing terpisah untuk FPS dan CPU"""
+        """Generate professional gaming chart dengan legend sederhana (hanya FPS dan CPU)"""
         
         # Create figure with 1920x1080 resolution (Full HD)
         fig, ax1 = plt.subplots(figsize=(19.2, 10.8))  # 1920x1080 pixels at 100 DPI
@@ -150,28 +150,40 @@ class GamingChartGenerator:
         # Plot data
         time_data = self.data['TimeMinutes']
         
+        # Variable to track if we've added labels (to avoid duplicate legend entries)
+        fps_labeled = False
+        cpu_labeled = False
+        
         # Original data (lebih transparan jika smoothed ditampilkan)
         if show_original:
             alpha_original = 0.3 if show_smoothed else 0.9
             linestyle_original = '--' if show_smoothed else '-'
             
+            # Only add label if this is the only line being shown for this metric
+            fps_label = 'FPS' if not show_smoothed else None
+            cpu_label = 'CPU' if not show_smoothed else None
+            
             ax1.plot(time_data, self.data['FPS'], 
-                    color=fps_color, linewidth=1, label='FPS (Original)', 
+                    color=fps_color, linewidth=1, label=fps_label, 
                     alpha=alpha_original, zorder=2, linestyle=linestyle_original)
             ax2.plot(time_data, self.data['CPU(%)'], 
-                    color=cpu_color, linewidth=1, label='CPU (Original)', 
+                    color=cpu_color, linewidth=1, label=cpu_label, 
                     alpha=alpha_original, zorder=1, linestyle=linestyle_original)
+            
+            if not show_smoothed:
+                fps_labeled = True
+                cpu_labeled = True
         
-        # Smoothed data - dengan label yang menunjukkan status filter
+        # Smoothed data - dengan label sederhana
         if show_smoothed and self.smoothed_data is not None:
-            # FPS smoothed line
-            fps_label = 'FPS (Smoothed)' if enable_fps_filter else 'FPS (Original)'
+            # FPS smoothed line - hanya label 'FPS'
+            fps_label = 'FPS' if not fps_labeled else None
             ax1.plot(time_data, self.smoothed_data['FPS_Smooth'], 
                     color=fps_color, linewidth=2.5, label=fps_label, 
                     alpha=0.9, zorder=4)
             
-            # CPU smoothed line
-            cpu_label = 'CPU (Smoothed)' if enable_cpu_filter else 'CPU (Original)'
+            # CPU smoothed line - hanya label 'CPU'
+            cpu_label = 'CPU' if not cpu_labeled else None
             ax2.plot(time_data, self.smoothed_data['CPU_Smooth'], 
                     color=cpu_color, linewidth=2.5, label=cpu_label, 
                     alpha=0.9, zorder=3)
@@ -189,15 +201,25 @@ class GamingChartGenerator:
         ax1.grid(True, alpha=0.3, linestyle='--', color='white')
         ax1.set_facecolor('none')
         
-        # Legend
+        # Legend - hanya menampilkan FPS dan CPU
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        legend = ax1.legend(lines1 + lines2, labels1 + labels2, 
-                          loc='upper right', framealpha=0.8, fancybox=True,
-                          facecolor='white', edgecolor='gray')
         
-        for text in legend.get_texts():
-            text.set_color('black')
+        # Filter out None labels
+        filtered_lines = []
+        filtered_labels = []
+        for line, label in zip(lines1 + lines2, labels1 + labels2):
+            if label is not None:
+                filtered_lines.append(line)
+                filtered_labels.append(label)
+        
+        if filtered_lines:  # Only create legend if there are labels
+            legend = ax1.legend(filtered_lines, filtered_labels, 
+                              loc='upper right', framealpha=0.8, fancybox=True,
+                              facecolor='white', edgecolor='gray')
+            
+            for text in legend.get_texts():
+                text.set_color('black')
         
         # Hide spines
         for spine in ax1.spines.values():
