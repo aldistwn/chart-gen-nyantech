@@ -601,7 +601,7 @@ def main():
                                 st.markdown("**🎯 FPS Filter (ACTIVE):**")
                                 st.write(f"• Window Size: {fps_window}")
                                 st.write(f"• Polynomial Order: {fps_poly}")
-                            else:
+                            else
                                 st.markdown("**🎯 FPS Filter (DISABLED)**")
                                 st.write("• Using processed FPS data")
                         
