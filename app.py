@@ -611,3 +611,5 @@ def main():
                                 st.write(f"• Window Size: {cpu_window}")
                                 st.write(f"• Polynomial Order: {cpu_poly}")
                             else:
+                                st.markdown("**🎯 CPU Filter (DISABLED)**")
+                                st.write("• Using processed CPU data")
