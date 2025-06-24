@@ -415,36 +415,36 @@ def main():
         cpu_color = st.color_picker("CPU Color", "#4A90E2")
         
         st.header("📊 Display Options")
-        show_original = st.checkbox("Show Original Data", value=True)
-        show_smoothed = st.checkbox("Show Smoothed Data", value=True)
+        show_original = st.checkbox("Show Original Data", value=False)
+        show_smoothed = st.checkbox("Show Smoothed Data", value=False)
         
         st.header("🔧 Savitzky-Golay Filter")
         st.markdown("**FPS Smoothing:**")
-        enable_fps_filter = st.toggle("🎯 Enable FPS Smoothing", value=True,
+        enable_fps_filter = st.toggle("🎯 Enable FPS Smoothing", value=False,
                                      help="Turn on/off FPS data smoothing")
         
         if enable_fps_filter:
-            fps_window = st.slider("FPS Window Size", min_value=5, max_value=51, value=21, step=2,
+            fps_window = st.slider("FPS Window Size", min_value=5, max_value=51, value=5, step=2,
                                   help="Larger values = more smoothing")
-            fps_poly = st.slider("FPS Polynomial Order", min_value=1, max_value=5, value=3,
+            fps_poly = st.slider("FPS Polynomial Order", min_value=1, max_value=5, value=1,
                                 help="Higher order = better fit to curves")
         else:
-            fps_window = 21
-            fps_poly = 3
+            fps_window = 5
+            fps_poly = 1
             st.info("ℹ️ FPS smoothing disabled - using processed FPS data")
         
         st.markdown("**CPU Smoothing:**")
-        enable_cpu_filter = st.toggle("🖥️ Enable CPU Smoothing", value=True,
+        enable_cpu_filter = st.toggle("🖥️ Enable CPU Smoothing", value=False,
                                      help="Turn on/off CPU usage data smoothing")
         
         if enable_cpu_filter:
-            cpu_window = st.slider("CPU Window Size", min_value=5, max_value=51, value=21, step=2,
+            cpu_window = st.slider("CPU Window Size", min_value=5, max_value=51, value=5, step=2,
                                   help="Larger values = more smoothing")
-            cpu_poly = st.slider("CPU Polynomial Order", min_value=1, max_value=5, value=3,
+            cpu_poly = st.slider("CPU Polynomial Order", min_value=1, max_value=5, value=1,
                                 help="Higher order = better fit to curves")
         else:
-            cpu_window = 21
-            cpu_poly = 3
+            cpu_window = 5
+            cpu_poly = 1
             st.info("ℹ️ CPU smoothing disabled - using processed CPU data")
         
         st.header("🧹 Enhanced FPS Outlier Removal")
