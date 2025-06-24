@@ -72,8 +72,8 @@ class GamingChartGenerator:
             st.error(f"❌ Error loading CSV: {e}")
             return False
     
-    def remove_outliers_iqr(self, data, sensitivity='moderate'):
-        """Remove outliers using IQR method - removes 1% worst frame drops"""
+    def remove_fps_outliers(self, data, sensitivity='moderate'):
+        """Remove FPS outliers - ONLY removes bottom 1% worst frame drops"""
         try:
             # Convert to pandas Series if not already
             if not isinstance(data, pd.Series):
@@ -82,48 +82,36 @@ class GamingChartGenerator:
             # Remove NaN values for calculation
             clean_data = data.dropna()
             if len(clean_data) < 10:  # Need minimum data points
-                st.warning("⚠️ Not enough data points for outlier removal")
+                st.warning("⚠️ Not enough data points for FPS outlier removal")
                 return data
             
-            # Calculate IQR
-            q1 = clean_data.quantile(0.25)
-            q3 = clean_data.quantile(0.75)
-            iqr = q3 - q1
-            
-            # Set multiplier based on sensitivity - fokus pada 1% worst frames
-            multipliers = {
-                'conservative': 2.0,  # Keep more data
-                'moderate': 1.5,      # Balanced
-                'aggressive': 1.0     # Remove more outliers
-            }
-            multiplier = multipliers.get(sensitivity, 1.5)
-            
-            # Calculate bounds - fokus pada lower bound untuk frame drops
-            lower_bound = q1 - multiplier * iqr
-            upper_bound = q3 + multiplier * iqr
-            
-            # Alternative: Remove bottom 1% of frames (worst frame drops)
+            # Calculate percentiles for 1% worst frames
             percentile_1 = clean_data.quantile(0.01)  # Bottom 1%
+            percentile_5 = clean_data.quantile(0.05)  # Bottom 5% for reference
             
-            # Use the more restrictive bound (either IQR or 1% percentile)
-            final_lower_bound = max(lower_bound, percentile_1)
+            # Set threshold based on sensitivity - ONLY remove bottom frames
+            thresholds = {
+                'conservative': percentile_1,      # Remove only bottom 1%
+                'moderate': percentile_1 * 1.1,   # Remove bottom 1% + slightly above
+                'aggressive': percentile_5        # Remove bottom 5%
+            }
+            threshold = thresholds.get(sensitivity, percentile_1)
             
-            # Detect outliers
-            outlier_mask = (clean_data < final_lower_bound) | (clean_data > upper_bound)
+            # Only remove frames BELOW threshold (worst performance)
+            outlier_mask = clean_data < threshold
             outlier_count = outlier_mask.sum()
             
-            # Show outlier detection info
-            st.info(f"🔍 IQR Detection: Q1={q1:.1f}, Q3={q3:.1f}, IQR={iqr:.1f}")
-            st.info(f"📊 1% Percentile: {percentile_1:.1f}")
-            st.info(f"📊 Valid range: {final_lower_bound:.1f} - {upper_bound:.1f}")
-            st.info(f"🧹 Outliers found: {outlier_count} ({outlier_count/len(clean_data)*100:.1f}%)")
+            # Show FPS outlier detection info
+            st.info(f"🎯 FPS Analysis: Min={clean_data.min():.1f}, Max={clean_data.max():.1f}")
+            st.info(f"📊 1% Percentile: {percentile_1:.1f} FPS")
+            st.info(f"📊 Removal Threshold: {threshold:.1f} FPS")
+            st.info(f"🧹 Worst frames found: {outlier_count} ({outlier_count/len(clean_data)*100:.1f}%)")
             
             if outlier_count == 0:
-                st.success("✅ No outliers detected - data is already clean!")
+                st.success("✅ No bad FPS frames detected - performance is consistent!")
                 return data
             
-            # MODIFICATION: Remove outliers completely (tidak pakai interpolasi)
-            # Filter out outliers - keep only valid data points
+            # Remove only the worst frames
             valid_mask = ~outlier_mask.reindex(data.index, fill_value=False)
             result = data[valid_mask].copy()
             
@@ -135,15 +123,15 @@ class GamingChartGenerator:
             new_length = len(result)
             removed_count = original_length - new_length
             
-            st.success(f"✅ Removed {removed_count} outlier frames ({removed_count/original_length*100:.1f}%)")
+            st.success(f"✅ Removed {removed_count} worst FPS frames ({removed_count/original_length*100:.1f}%)")
             st.info(f"📈 Data points: {original_length} → {new_length}")
-            st.info(f"🎯 New range: {result.min():.1f} - {result.max():.1f}")
+            st.info(f"🎯 New FPS range: {result.min():.1f} - {result.max():.1f}")
             
             return result
             
         except Exception as e:
-            st.error(f"❌ Outlier removal failed: {e}")
-            st.info("🔄 Using original data instead")
+            st.error(f"❌ FPS outlier removal failed: {e}")
+            st.info("🔄 Using original FPS data instead")
             return data
     
     def apply_savgol_filter(self, fps_window=21, fps_poly=3, cpu_window=21, cpu_poly=3, 
@@ -159,27 +147,29 @@ class GamingChartGenerator:
             
             # Apply outlier removal if enabled
             if enable_outlier_removal:
-                st.info("🧹 Applying IQR outlier removal (removing 1% worst frames)...")
+                st.info("🧹 Applying FPS outlier removal (removing 1% worst frames only)...")
                 
-                # Remove outliers from FPS
+                # Remove outliers ONLY from FPS
                 st.markdown("**FPS Outlier Removal:**")
-                fps_filtered = self.remove_outliers_iqr(self.data['FPS'], outlier_sensitivity)
+                fps_filtered = self.remove_fps_outliers(self.data['FPS'], outlier_sensitivity)
                 
-                # Remove outliers from CPU  
-                st.markdown("**CPU Outlier Removal:**")
-                cpu_filtered = self.remove_outliers_iqr(self.data['CPU(%)'], outlier_sensitivity)
+                # Keep CPU data as-is (no outlier removal for CPU)
+                st.markdown("**CPU Data:**")
+                st.info("✅ CPU data kept unchanged (no outlier removal applied)")
+                cpu_data = self.data['CPU(%)']
                 
-                # PENTING: Pastikan FPS dan CPU memiliki panjang yang sama
-                min_length = min(len(fps_filtered), len(cpu_filtered))
+                # Adjust CPU data length to match filtered FPS
+                min_length = len(fps_filtered)
+                cpu_adjusted = cpu_data.iloc[:min_length] if len(cpu_data) > min_length else cpu_data
                 
-                # Create new dataframe with filtered data
+                # Create new dataframe with filtered FPS and original CPU
                 self.smoothed_data = pd.DataFrame({
-                    'FPS': fps_filtered.iloc[:min_length].values,
-                    'CPU(%)': cpu_filtered.iloc[:min_length].values,
+                    'FPS': fps_filtered.values,
+                    'CPU(%)': cpu_adjusted.values,
                     'TimeMinutes': [i / 60 for i in range(min_length)]  # Recalculate time
                 })
                 
-                st.success(f"✅ IQR outlier removal completed! Data: {original_length} → {min_length} points")
+                st.success(f"✅ FPS outlier removal completed! Data: {original_length} → {min_length} points")
             
             # Apply FPS filter if enabled
             if enable_fps:
@@ -457,30 +447,31 @@ def main():
             cpu_poly = 3
             st.info("ℹ️ CPU smoothing disabled - using processed CPU data")
         
-        st.header("🧹 Enhanced Outlier Removal")
-        enable_outlier_removal = st.toggle("🚫 Remove 1% Worst Frame Drops", value=False,
-                                          help="Remove 1% worst frame drops using enhanced IQR method - data points will be completely removed (not interpolated)")
+        st.header("🧹 Enhanced FPS Outlier Removal")
+        enable_outlier_removal = st.toggle("🚫 Remove 1% Worst FPS Drops", value=False,
+                                          help="Remove only the worst 1% FPS drops - CPU data remains unchanged")
         
         if enable_outlier_removal:
             outlier_sensitivity = st.select_slider(
-                "Outlier Sensitivity",
+                "FPS Removal Sensitivity",
                 options=['conservative', 'moderate', 'aggressive'],
                 value='moderate',
-                help="Conservative = keep more data, Aggressive = remove more outliers"
+                help="Conservative = 1% worst only, Moderate = 1% + slightly above, Aggressive = 5% worst"
             )
             
             # Explanation based on sensitivity
             if outlier_sensitivity == 'conservative':
-                st.info("🛡️ **Conservative**: Remove 1% worst + very extreme outliers (2.0 × IQR)")
+                st.info("🛡️ **Conservative**: Remove only bottom 1% FPS frames")
             elif outlier_sensitivity == 'moderate':
-                st.info("⚖️ **Moderate**: Remove 1% worst + balanced outlier removal (1.5 × IQR)")
+                st.info("⚖️ **Moderate**: Remove bottom 1% + slightly above threshold")
             else:
-                st.info("🔥 **Aggressive**: Remove 1% worst + more outliers for cleaner chart (1.0 × IQR)")
+                st.info("🔥 **Aggressive**: Remove bottom 5% FPS frames for cleanest result")
             
-            st.warning("⚠️ **Note**: Outlier data points will be completely removed from the dataset, shortening the total duration. Time axis will be recalculated.")
+            st.warning("⚠️ **Note**: Only worst FPS frames will be removed. CPU data remains unchanged.")
+            st.info("💡 **Example**: If FPS range is 30-120, only frames below ~35 FPS will be removed, keeping 80-120 FPS intact.")
         else:
             outlier_sensitivity = 'moderate'
-            st.info("ℹ️ Outlier removal disabled - keeping all original data")
+            st.info("ℹ️ FPS outlier removal disabled - keeping all original data")
         
         # Statistics option - only show if at least one filter is enabled
         if enable_fps_filter or enable_cpu_filter or enable_outlier_removal:
@@ -504,12 +495,11 @@ def main():
                         # Custom success message berdasarkan filter yang aktif
                         filter_messages = []
                         if enable_outlier_removal:
-                            filter_messages.append(f"1% frame drop removal ({outlier_sensitivity})")
+                            filter_messages.append(f"FPS outlier removal ({outlier_sensitivity})")
                         if enable_fps_filter:
                             filter_messages.append("FPS smoothing")
                         if enable_cpu_filter:
                             filter_messages.append("CPU smoothing")
-                        
                         if filter_messages:
                             st.success(f"🎉 Gaming log processed with {', '.join(filter_messages)}!")
                         else:
@@ -579,10 +569,10 @@ def main():
                         
                         # Enhanced outlier removal info
                         if enable_outlier_removal:
-                            st.markdown("**🧹 Enhanced Outlier Removal (ACTIVE):**")
-                            st.write(f"• Method: IQR + 1% Percentile Removal")
+                            st.markdown("**🧹 Enhanced FPS Outlier Removal (ACTIVE):**")
+                            st.write(f"• Method: Pure Percentile-based Removal")
                             st.write(f"• Sensitivity: {outlier_sensitivity.title()}")
-                            st.write(f"• **Key Change**: Outlier frames are completely removed (not interpolated)")
+                            st.write(f"• **Target**: Remove only worst FPS frames (CPU unchanged)")
                             st.write(f"• **Effect**: Dataset becomes shorter, time axis is recalculated")
                             
                             # Show data reduction stats
@@ -592,6 +582,7 @@ def main():
                             
                             st.write(f"• **Data Reduction**: {original_length} → {processed_length} points ({reduction_pct:.1f}% removed)")
                             st.write(f"• **Time Reduction**: {original_length/60:.1f} → {processed_length/60:.1f} minutes")
+                            st.write(f"• **CPU Data**: Kept unchanged (no outlier removal)")
                             st.write("")
                         
                         col1, col2 = st.columns(2)
@@ -614,7 +605,7 @@ def main():
                                 st.markdown("**🖥️ CPU Filter (DISABLED)**")
                                 st.write("• Using processed CPU data")
                         
-                        st.info("💡 **Enhanced Processing Order**: 1) Remove 1% worst frames + IQR outliers → 2) Apply Savitzky-Golay smoothing. This method completely removes bad frames instead of interpolating, resulting in more accurate performance analysis.")
+                        st.info("💡 **Enhanced Processing Order**: 1) Remove only worst FPS frames (CPU untouched) → 2) Apply Savitzky-Golay smoothing. This method preserves good FPS performance while removing only true frame drops.")
                 else:
                     st.info("ℹ️ No processing filters active - displaying original data")
                 
@@ -672,37 +663,39 @@ def main():
             ```
             """)
         
-        with st.expander("🧹 About Enhanced IQR Outlier Removal"):
+        with st.expander("🧹 About Enhanced FPS Outlier Removal"):
             st.markdown("""
-            **Enhanced IQR Method** menghilangkan 1% worst frame drops + extreme outliers:
-            - ✅ **NEW**: Removes bottom 1% of frames (worst performance)
-            - ✅ **IMPROVED**: Completely removes outlier frames (no interpolation)
-            - ✅ **RESULT**: Dataset becomes shorter but more accurate
-            - ✅ **BENEFIT**: Better represents actual gaming experience
+            **Enhanced FPS Method** menghilangkan hanya worst FPS frames:
+            - ✅ **FOCUS**: Only removes worst FPS performance frames
+            - ✅ **PRESERVE**: Keeps good FPS (80-120) completely intact
+            - ✅ **CPU SAFE**: CPU data remains 100% unchanged
+            - ✅ **ACCURATE**: Better represents actual gaming experience
             
-            **Key Improvements:**
-            1. **1% Percentile Removal**: Automatically removes worst 1% of frames
-            2. **Complete Removal**: Outlier frames are deleted, not interpolated
-            3. **Time Recalculation**: Time axis adjusts to new data length
-            4. **Sequential Data**: No gaps in data (a,b,c,d,e → a,b,d,e if c is outlier)
+            **Key Advantages:**
+            1. **Percentile-based**: Uses pure percentile thresholds, not IQR
+            2. **FPS-only**: Only processes FPS data, leaves CPU untouched
+            3. **Conservative**: Removes true frame drops, preserves good performance
+            4. **Sequential Data**: No gaps in data (a,b,c,d,e → a,b,d,e if c is bad frame)
             
             **How it works:**
-            1. Calculate 1st percentile (bottom 1% threshold)
-            2. Calculate IQR bounds with sensitivity multiplier
-            3. Use more restrictive bound (max of 1% percentile and IQR lower bound) 
-            4. Remove all frames below lower bound or above upper bound
+            1. Calculate FPS percentiles (1st, 5th percentile)
+            2. Set removal threshold based on sensitivity
+            3. Remove only frames BELOW threshold (worst performance)
+            4. Keep CPU data exactly as-is
             5. Reset index to create continuous sequence
             6. Recalculate time axis for remaining data
             
             **Sensitivity Levels:**
-            - **Conservative (2.0×)**: Remove 1% worst + very extreme outliers only
-            - **Moderate (1.5×)**: Remove 1% worst + standard outlier detection  
-            - **Aggressive (1.0×)**: Remove 1% worst + more outliers for cleanest result
+            - **Conservative**: Remove only bottom 1% FPS frames
+            - **Moderate**: Remove bottom 1% + slightly above threshold
+            - **Aggressive**: Remove bottom 5% FPS frames for cleanest result
             
             **Example Impact:**
-            - Original: 10,000 frames (166.7 minutes)
-            - After removal: 9,800 frames (163.3 minutes) 
-            - Result: 200 worst frames removed, 3.4 minutes shorter but much cleaner data
+            - FPS Range: 30-120 FPS
+            - Conservative: Removes frames <31 FPS (keeps 80+ FPS intact)
+            - Moderate: Removes frames <35 FPS
+            - Aggressive: Removes frames <45 FPS
+            - CPU: Always unchanged regardless of FPS filtering
             """)
         
         with st.expander("🔧 About Savitzky-Golay Filter"):
@@ -723,15 +716,15 @@ def main():
             - Untuk data noisy: window size besar, poly order rendah
             - Untuk mempertahankan detail: window size kecil, poly order tinggi
             
-            **Works best with Enhanced IQR:**
-            - First remove bad frames completely
+            **Works best with Enhanced FPS Removal:**
+            - First remove only worst FPS frames
             - Then smooth the remaining clean data
-            - Result: Professional-grade performance charts
+            - Result: Professional-grade performance charts with preserved good performance
             """)
         
         # Footer
         st.markdown("---")
-        st.markdown("Made with ❤️ for gaming performance analysis | Enhanced with 1% Frame Drop Removal + Savitzky-Golay smoothing")
+        st.markdown("Made with ❤️ for gaming performance analysis | Enhanced with Smart FPS Outlier Removal + Savitzky-Golay smoothing")
 
 if __name__ == "__main__":
     main()
