@@ -72,6 +72,80 @@ class GamingChartGenerator:
             st.error(f"❌ Error loading CSV: {e}")
             return False
     
+    def remove_outliers_iqr(self, data, sensitivity='moderate'):
+        """Remove outliers using IQR method - removes 1% worst frame drops"""
+        try:
+            # Convert to pandas Series if not already
+            if not isinstance(data, pd.Series):
+                data = pd.Series(data)
+            
+            # Remove NaN values for calculation
+            clean_data = data.dropna()
+            if len(clean_data) < 10:  # Need minimum data points
+                st.warning("⚠️ Not enough data points for outlier removal")
+                return data
+            
+            # Calculate IQR
+            q1 = clean_data.quantile(0.25)
+            q3 = clean_data.quantile(0.75)
+            iqr = q3 - q1
+            
+            # Set multiplier based on sensitivity - fokus pada 1% worst frames
+            multipliers = {
+                'conservative': 2.0,  # Keep more data
+                'moderate': 1.5,      # Balanced
+                'aggressive': 1.0     # Remove more outliers
+            }
+            multiplier = multipliers.get(sensitivity, 1.5)
+            
+            # Calculate bounds - fokus pada lower bound untuk frame drops
+            lower_bound = q1 - multiplier * iqr
+            upper_bound = q3 + multiplier * iqr
+            
+            # Alternative: Remove bottom 1% of frames (worst frame drops)
+            percentile_1 = clean_data.quantile(0.01)  # Bottom 1%
+            
+            # Use the more restrictive bound (either IQR or 1% percentile)
+            final_lower_bound = max(lower_bound, percentile_1)
+            
+            # Detect outliers
+            outlier_mask = (clean_data < final_lower_bound) | (clean_data > upper_bound)
+            outlier_count = outlier_mask.sum()
+            
+            # Show outlier detection info
+            st.info(f"🔍 IQR Detection: Q1={q1:.1f}, Q3={q3:.1f}, IQR={iqr:.1f}")
+            st.info(f"📊 1% Percentile: {percentile_1:.1f}")
+            st.info(f"📊 Valid range: {final_lower_bound:.1f} - {upper_bound:.1f}")
+            st.info(f"🧹 Outliers found: {outlier_count} ({outlier_count/len(clean_data)*100:.1f}%)")
+            
+            if outlier_count == 0:
+                st.success("✅ No outliers detected - data is already clean!")
+                return data
+            
+            # MODIFICATION: Remove outliers completely (tidak pakai interpolasi)
+            # Filter out outliers - keep only valid data points
+            valid_mask = ~outlier_mask.reindex(data.index, fill_value=False)
+            result = data[valid_mask].copy()
+            
+            # Reset index untuk membuat data berurutan tanpa gap
+            result = result.reset_index(drop=True)
+            
+            # Show results
+            original_length = len(data)
+            new_length = len(result)
+            removed_count = original_length - new_length
+            
+            st.success(f"✅ Removed {removed_count} outlier frames ({removed_count/original_length*100:.1f}%)")
+            st.info(f"📈 Data points: {original_length} → {new_length}")
+            st.info(f"🎯 New range: {result.min():.1f} - {result.max():.1f}")
+            
+            return result
+            
+        except Exception as e:
+            st.error(f"❌ Outlier removal failed: {e}")
+            st.info("🔄 Using original data instead")
+            return data
+    
     def apply_savgol_filter(self, fps_window=21, fps_poly=3, cpu_window=21, cpu_poly=3, 
                            enable_fps=True, enable_cpu=True, enable_outlier_removal=False, outlier_sensitivity='moderate'):
         """Apply Savitzky-Golay filter dan IQR outlier removal untuk smoothing data FPS dan CPU secara terpisah"""
@@ -156,80 +230,6 @@ class GamingChartGenerator:
         except Exception as e:
             st.error(f"❌ Error applying filters: {e}")
             return False
-    
-    def remove_outliers_iqr(self, data, sensitivity='moderate'):
-        """Remove outliers using IQR method - removes 1% worst frame drops"""
-        try:
-            # Convert to pandas Series if not already
-            if not isinstance(data, pd.Series):
-                data = pd.Series(data)
-            
-            # Remove NaN values for calculation
-            clean_data = data.dropna()
-            if len(clean_data) < 10:  # Need minimum data points
-                st.warning("⚠️ Not enough data points for outlier removal")
-                return data
-            
-            # Calculate IQR
-            q1 = clean_data.quantile(0.25)
-            q3 = clean_data.quantile(0.75)
-            iqr = q3 - q1
-            
-            # Set multiplier based on sensitivity - fokus pada 1% worst frames
-            multipliers = {
-                'conservative': 2.0,  # Keep more data
-                'moderate': 1.5,      # Balanced
-                'aggressive': 1.0     # Remove more outliers
-            }
-            multiplier = multipliers.get(sensitivity, 1.5)
-            
-            # Calculate bounds - fokus pada lower bound untuk frame drops
-            lower_bound = q1 - multiplier * iqr
-            upper_bound = q3 + multiplier * iqr
-            
-            # Alternative: Remove bottom 1% of frames (worst frame drops)
-            percentile_1 = clean_data.quantile(0.01)  # Bottom 1%
-            
-            # Use the more restrictive bound (either IQR or 1% percentile)
-            final_lower_bound = max(lower_bound, percentile_1)
-            
-            # Detect outliers
-            outlier_mask = (clean_data < final_lower_bound) | (clean_data > upper_bound)
-            outlier_count = outlier_mask.sum()
-            
-            # Show outlier detection info
-            st.info(f"🔍 IQR Detection: Q1={q1:.1f}, Q3={q3:.1f}, IQR={iqr:.1f}")
-            st.info(f"📊 1% Percentile: {percentile_1:.1f}")
-            st.info(f"📊 Valid range: {final_lower_bound:.1f} - {upper_bound:.1f}")
-            st.info(f"🧹 Outliers found: {outlier_count} ({outlier_count/len(clean_data)*100:.1f}%)")
-            
-            if outlier_count == 0:
-                st.success("✅ No outliers detected - data is already clean!")
-                return data
-            
-            # MODIFICATION: Remove outliers completely (tidak pakai interpolasi)
-            # Filter out outliers - keep only valid data points
-            valid_mask = ~outlier_mask.reindex(data.index, fill_value=False)
-            result = data[valid_mask].copy()
-            
-            # Reset index untuk membuat data berurutan tanpa gap
-            result = result.reset_index(drop=True)
-            
-            # Show results
-            original_length = len(data)
-            new_length = len(result)
-            removed_count = original_length - new_length
-            
-            st.success(f"✅ Removed {removed_count} outlier frames ({removed_count/original_length*100:.1f}%)")
-            st.info(f"📈 Data points: {original_length} → {new_length}")
-            st.info(f"🎯 New range: {result.min():.1f} - {result.max():.1f}")
-            
-            return result
-            
-        except Exception as e:
-            st.error(f"❌ Outlier removal failed: {e}")
-            st.info("🔄 Using original data instead")
-            return data
     
     def create_chart(self, game_title, game_settings, game_mode, smartphone_name, fps_color, cpu_color, 
                     show_original=True, show_smoothed=True, enable_fps_filter=True, enable_cpu_filter=True):
@@ -611,5 +611,127 @@ def main():
                                 st.write(f"• Window Size: {cpu_window}")
                                 st.write(f"• Polynomial Order: {cpu_poly}")
                             else:
-                                st.markdown("**🎯 CPU Filter (DISABLED)**")
+                                st.markdown("**🖥️ CPU Filter (DISABLED)**")
                                 st.write("• Using processed CPU data")
+                        
+                        st.info("💡 **Enhanced Processing Order**: 1) Remove 1% worst frames + IQR outliers → 2) Apply Savitzky-Golay smoothing. This method completely removes bad frames instead of interpolating, resulting in more accurate performance analysis.")
+                else:
+                    st.info("ℹ️ No processing filters active - displaying original data")
+                
+                # Download section
+                st.header("💾 Export Results")
+                
+                # PNG download
+                if 'chart_fig' in locals():
+                    img_buffer = io.BytesIO()
+                    chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
+                                     facecolor='none', edgecolor='none', transparent=True)
+                    img_buffer.seek(0)
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    
+                    # Dynamic filename based on active filters
+                    filter_suffix = ""
+                    filters_active = []
+                    if enable_outlier_removal:
+                        filters_active.append(f"1pct_removed_{outlier_sensitivity}")
+                    if enable_fps_filter:
+                        filters_active.append("fps_smooth")
+                    if enable_cpu_filter:
+                        filters_active.append("cpu_smooth")
+                    
+                    if filters_active:
+                        filter_suffix = "_" + "_".join(filters_active)
+                    
+                    png_filename = f"{game_title.replace(' ', '_')}{filter_suffix}_chart_{timestamp}.png"
+                    
+                    st.download_button(
+                        label="📸 Download Chart (PNG)",
+                        data=img_buffer.getvalue(),
+                        file_name=png_filename,
+                        mime="image/png",
+                        use_container_width=True
+                    )
+    
+    else:
+        # Help section
+        st.info("📤 Upload your gaming log CSV to get started!")
+        
+        with st.expander("📋 Supported CSV Format"):
+            st.markdown("""
+            **Required columns:**
+            - FPS data (any column with 'fps' in name)
+            - CPU usage data (any column with 'cpu' and '%')
+            
+            **Example CSV structure:**
+            ```
+            FPS,CPU(%),JANK,BigJANK
+            60,45.2,0,0
+            58,48.1,1,0
+            62,42.8,0,0
+            ```
+            """)
+        
+        with st.expander("🧹 About Enhanced IQR Outlier Removal"):
+            st.markdown("""
+            **Enhanced IQR Method** menghilangkan 1% worst frame drops + extreme outliers:
+            - ✅ **NEW**: Removes bottom 1% of frames (worst performance)
+            - ✅ **IMPROVED**: Completely removes outlier frames (no interpolation)
+            - ✅ **RESULT**: Dataset becomes shorter but more accurate
+            - ✅ **BENEFIT**: Better represents actual gaming experience
+            
+            **Key Improvements:**
+            1. **1% Percentile Removal**: Automatically removes worst 1% of frames
+            2. **Complete Removal**: Outlier frames are deleted, not interpolated
+            3. **Time Recalculation**: Time axis adjusts to new data length
+            4. **Sequential Data**: No gaps in data (a,b,c,d,e → a,b,d,e if c is outlier)
+            
+            **How it works:**
+            1. Calculate 1st percentile (bottom 1% threshold)
+            2. Calculate IQR bounds with sensitivity multiplier
+            3. Use more restrictive bound (max of 1% percentile and IQR lower bound) 
+            4. Remove all frames below lower bound or above upper bound
+            5. Reset index to create continuous sequence
+            6. Recalculate time axis for remaining data
+            
+            **Sensitivity Levels:**
+            - **Conservative (2.0×)**: Remove 1% worst + very extreme outliers only
+            - **Moderate (1.5×)**: Remove 1% worst + standard outlier detection  
+            - **Aggressive (1.0×)**: Remove 1% worst + more outliers for cleanest result
+            
+            **Example Impact:**
+            - Original: 10,000 frames (166.7 minutes)
+            - After removal: 9,800 frames (163.3 minutes) 
+            - Result: 200 worst frames removed, 3.4 minutes shorter but much cleaner data
+            """)
+        
+        with st.expander("🔧 About Savitzky-Golay Filter"):
+            st.markdown("""
+            **Savitzky-Golay Filter** adalah metode smoothing yang:
+            - ✅ Mengurangi noise dalam data
+            - ✅ Mempertahankan bentuk kurva asli
+            - ✅ Cocok untuk data gaming performance
+            - ✅ Dapat disesuaikan secara terpisah untuk FPS dan CPU
+            
+            **Parameter:**
+            - **Window Size**: Jumlah data point yang digunakan (lebih besar = lebih smooth)
+            - **Polynomial Order**: Tingkat polynomial untuk fitting (1-5)
+            
+            **Tips:**
+            - Window size ganjil dan minimal 5
+            - Polynomial order harus lebih kecil dari window size
+            - Untuk data noisy: window size besar, poly order rendah
+            - Untuk mempertahankan detail: window size kecil, poly order tinggi
+            
+            **Works best with Enhanced IQR:**
+            - First remove bad frames completely
+            - Then smooth the remaining clean data
+            - Result: Professional-grade performance charts
+            """)
+        
+        # Footer
+        st.markdown("---")
+        st.markdown("Made with ❤️ for gaming performance analysis | Enhanced with 1% Frame Drop Removal + Savitzky-Golay smoothing")
+
+if __name__ == "__main__":
+    main()
