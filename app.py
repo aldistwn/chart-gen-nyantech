@@ -42,7 +42,7 @@ class FinalOptimizedGamingChartGenerator:
             return data, 0
     
     def load_csv_data(self, uploaded_file):
-        """Enhanced CSV loading with strict column requirements"""
+        """Enhanced CSV loading with EMERGENCY debugging"""
         try:
             # Try different delimiters
             delimiters = [',', ';', '\t', '|']
@@ -61,58 +61,107 @@ class FinalOptimizedGamingChartGenerator:
                 st.error("❌ Cannot parse CSV file. Please check format.")
                 return False
             
-            # Show basic info
-            st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
-            
-            # STRICT column detection - only exact matches
+            # 🚨 EMERGENCY DEBUG - DETAILED COLUMN ANALYSIS
+            st.markdown("### 🚨 EMERGENCY DEBUG - RAW CSV ANALYSIS")
             columns = list(self.original_data.columns)
             
-            # Debug: Show all columns
-            with st.expander("🔍 DEBUG - All detected columns"):
-                for i, col in enumerate(columns):
-                    st.write(f"Column {i+1}: '{col}'")
+            st.write("**All columns found:**")
+            for i, col in enumerate(columns):
+                st.write(f"  Index {i}: '{col}' (len: {len(col)}, repr: {repr(col)})")
             
-            # Check for EXACT required columns
-            if 'FPS' not in columns:
-                st.error("❌ Required 'FPS' column not found!")
-                st.info("💡 Please ensure your CSV has a column labeled exactly: **FPS**")
-                st.info(f"Available columns: {', '.join(columns)}")
+            # CRITICAL: Check exact column content by INDEX
+            if 'FPS' in columns:
+                fps_index = columns.index('FPS')
+                st.write(f"🎯 FPS column found at index {fps_index}")
+                
+                # Show raw FPS data BEFORE any processing
+                raw_fps_column = self.original_data.iloc[:, fps_index]
+                st.write(f"Raw FPS column data type: {raw_fps_column.dtype}")
+                st.write(f"Raw FPS first 10 values: {list(raw_fps_column.head(10))}")
+                
+                # 🚨 CRITICAL CHECK: Values > 70 in RAW data
+                fps_numeric = pd.to_numeric(raw_fps_column, errors='coerce')
+                high_fps_raw = fps_numeric[fps_numeric > 70]
+                st.write(f"🚨 **RAW FPS values > 70: {len(high_fps_raw)} found**")
+                if len(high_fps_raw) > 0:
+                    st.error(f"🚨 RAW DATA ALREADY HAS HIGH VALUES: {list(high_fps_raw.head(10))}")
+                    st.error("**BUG IS IN CSV READING OR COLUMN DETECTION!**")
+                else:
+                    st.success("✅ Raw FPS data looks normal (no values > 70)")
+            else:
+                st.error("❌ FPS column not found!")
                 return False
             
-            if 'CPU(%)' not in columns:
-                st.error("❌ Required 'CPU(%)' column not found!")
-                st.info("💡 Please ensure your CSV has a column labeled exactly: **CPU(%)**")
-                st.info(f"Available columns: {', '.join(columns)}")
+            # CRITICAL: Check CPU column
+            if 'CPU(%)' in columns:
+                cpu_index = columns.index('CPU(%)')
+                st.write(f"🎯 CPU(%) column found at index {cpu_index}")
+                
+                raw_cpu_column = self.original_data.iloc[:, cpu_index]
+                cpu_numeric = pd.to_numeric(raw_cpu_column, errors='coerce')
+                st.write(f"Raw CPU range: {cpu_numeric.min():.1f} - {cpu_numeric.max():.1f}")
+                
+                # 🚨 CRITICAL CHECK: Could we be reading CPU as FPS by mistake?
+                if cpu_numeric.max() > 80:
+                    st.warning(f"⚠️ CPU values go up to {cpu_numeric.max():.1f}% - **COULD BE SOURCE OF HIGH 'FPS' VALUES!**")
+            else:
+                st.error("❌ CPU(%) column not found!")
                 return False
+            
+            # Show basic info
+            st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
             
             # SUCCESS: Both columns found
             st.success("✅ FPS column detected: **FPS**")
             st.success("✅ CPU column detected: **CPU(%)**")
             
-            # Validate and extract data
-            fps_data, fps_quality = self.validate_data(self.original_data['FPS'], "FPS")
-            cpu_data, cpu_quality = self.validate_data(self.original_data['CPU(%)'], "CPU")
+            # 🚨 MANUAL ASSIGNMENT WITH VALIDATION
+            st.markdown("### 🚨 MANUAL COLUMN ASSIGNMENT DEBUG")
             
-            if fps_quality < 50 or cpu_quality < 50:
+            # Assign FPS data
+            fps_data = pd.to_numeric(self.original_data['FPS'], errors='coerce')
+            st.write(f"**After FPS assignment** - Min: {fps_data.min()}, Max: {fps_data.max()}")
+            
+            # Assign CPU data  
+            cpu_data = pd.to_numeric(self.original_data['CPU(%)'], errors='coerce')
+            st.write(f"**After CPU assignment** - Min: {cpu_data.min():.1f}, Max: {cpu_data.max():.1f}")
+            
+            # Validate data quality
+            fps_valid = fps_data.notna().sum()
+            cpu_valid = cpu_data.notna().sum()
+            total = len(self.original_data)
+            
+            st.info(f"📊 Data quality - FPS: {fps_valid}/{total} valid, CPU: {cpu_valid}/{total} valid")
+            
+            if fps_valid < total * 0.5 or cpu_valid < total * 0.5:
                 st.error("❌ Data quality too low. Please check your data.")
                 return False
             
-            # DEBUG: Show exact data ranges
-            st.markdown("### 📊 Data Validation & Preview")
+            # 🚨 FINAL ASSIGNMENT WITH VALIDATION
+            self.original_data['FPS'] = fps_data
+            self.original_data['CPU(%)'] = cpu_data
+            self.original_data['TimeMinutes'] = [i / 60 for i in range(len(self.original_data))]
+            
+            # 🚨 POST-ASSIGNMENT VALIDATION
+            st.markdown("### 🚨 POST-ASSIGNMENT VALIDATION")
+            final_fps_max = self.original_data['FPS'].max()
+            final_fps_min = self.original_data['FPS'].min()
+            st.write(f"**Final standardized FPS range: {final_fps_min} - {final_fps_max}**")
+            
+            if final_fps_max > 70:
+                st.error(f"🚨 **BUG DETECTED IN LOAD PHASE: FPS max is {final_fps_max}**")
+                st.error("**VALUES > 70 APPEARED DURING CSV LOADING!**")
+            else:
+                st.success(f"✅ **CSV loaded correctly, FPS max: {final_fps_max}**")
             
             # Critical debug: Check for anomalous values
             high_fps_count = len(fps_data[fps_data > 70])
             very_high_fps_count = len(fps_data[fps_data > 80])
             
             if high_fps_count > 0:
-                st.warning(f"⚠️ Found {high_fps_count} FPS values > 70")
+                st.error(f"🚨 Found {high_fps_count} FPS values > 70 in final data")
             if very_high_fps_count > 0:
-                st.error(f"🚨 Found {very_high_fps_count} FPS values > 80 - This is unusual!")
-            
-            # Create standardized dataset
-            self.original_data['FPS'] = fps_data
-            self.original_data['CPU(%)'] = cpu_data
-            self.original_data['TimeMinutes'] = [i / 60 for i in range(len(self.original_data))]
+                st.error(f"🚨 Found {very_high_fps_count} FPS values > 80 - This should NOT happen!")
             
             # Show data preview
             col1, col2 = st.columns(2)
@@ -199,52 +248,118 @@ class FinalOptimizedGamingChartGenerator:
     def apply_processing(self, fps_window=5, fps_poly=1, cpu_window=5, cpu_poly=1,
                         enable_fps_smooth=False, enable_cpu_smooth=False,
                         enable_outlier_removal=False, outlier_sensitivity='moderate'):
-        """Streamlined processing pipeline with debugging"""
+        """Streamlined processing pipeline with EMERGENCY debugging"""
         
-        st.info(f"🔍 Original data range: FPS {self.original_data['FPS'].min():.1f} - {self.original_data['FPS'].max():.1f}")
+        # 🚨 EMERGENCY DEBUG - PROCESSING PHASE
+        st.markdown("### 🚨 EMERGENCY DEBUG - PROCESSING PHASE")
+        
+        input_fps_max = self.original_data['FPS'].max()
+        input_fps_min = self.original_data['FPS'].min()
+        st.write(f"**Input to processing - FPS range: {input_fps_min} - {input_fps_max}**")
         
         # Initialize with original data
         if enable_outlier_removal:
+            st.write("⚠️ **OUTLIER REMOVAL ENABLED - DEBUGGING...**")
+            
+            # Debug outlier removal step by step
+            fps_data = self.original_data['FPS'].dropna()
+            
+            # Calculate threshold
+            percentile_1 = fps_data.quantile(0.01)
+            threshold = percentile_1 * 1.1  # moderate sensitivity
+            st.write(f"Outlier threshold: {threshold}")
+            
+            # Get indices to keep
+            keep_mask = fps_data >= threshold
+            keep_indices = fps_data[keep_mask].index.tolist()
+            removed_indices = fps_data[~keep_mask].index.tolist()
+            
+            st.write(f"Keeping {len(keep_indices)} out of {len(fps_data)} indices")
+            st.write(f"Removing {len(removed_indices)} indices")
+            
+            # Manual data selection with validation
+            selected_fps = self.original_data.loc[keep_indices, 'FPS'].values
+            selected_cpu = self.original_data.loc[keep_indices, 'CPU(%)'].values
+            
+            st.write(f"**Selected FPS range: {selected_fps.min()} - {selected_fps.max()}**")
+            st.write(f"**Selected CPU range: {selected_cpu.min():.1f} - {selected_cpu.max():.1f}**")
+            
+            # 🚨 CRITICAL CHECK: Are we accidentally mixing data?
+            if selected_fps.max() > input_fps_max + 0.1:
+                st.error(f"🚨 **OUTLIER REMOVAL BUG: Selected FPS max ({selected_fps.max()}) > input max ({input_fps_max})**")
+                st.error("**OUTLIER REMOVAL IS CREATING IMPOSSIBLE VALUES!**")
+                return False
+            
+            # Store removed indices for tracking
+            self.removed_indices = removed_indices
+            
+            # Create processed dataset
+            self.processed_data = pd.DataFrame({
+                'FPS': selected_fps,
+                'CPU(%)': selected_cpu,
+                'TimeMinutes': [i / 60 for i in range(len(selected_fps))]
+            })
+            
             if not self.remove_fps_outliers_optimized(outlier_sensitivity):
                 st.warning("⚠️ Outlier removal failed, using original data")
                 self.processed_data = self.original_data.copy()
         else:
+            st.write("✅ **No outlier removal - copying original data**")
             self.processed_data = self.original_data.copy()
+        
+        # Check processed data before smoothing
+        processed_fps_max = self.processed_data['FPS'].max()
+        processed_fps_min = self.processed_data['FPS'].min()
+        st.write(f"**After outlier processing - FPS range: {processed_fps_min} - {processed_fps_max}**")
         
         # Apply smoothing filters
         try:
-            # FPS Smoothing
+            # 🚨 DEBUG FPS Smoothing
             if enable_fps_smooth:
+                st.write("⚠️ **FPS SMOOTHING ENABLED - DEBUGGING...**")
+                
                 data_length = len(self.processed_data)
                 fps_window = min(max(fps_window, 5), data_length)
                 if fps_window % 2 == 0:
                     fps_window -= 1
                 
                 if data_length >= fps_window:
-                    # DEBUG: Before smoothing
-                    before_max = self.processed_data['FPS'].max()
+                    # Before smoothing
+                    before_fps = self.processed_data['FPS'].copy()
+                    before_max = before_fps.max()
+                    before_min = before_fps.min()
+                    st.write(f"**Before smoothing: {before_min} - {before_max}**")
                     
+                    # Apply smoothing
                     smoothed_fps = savgol_filter(
-                        self.processed_data['FPS'],
+                        before_fps,
                         window_length=fps_window,
                         polyorder=min(fps_poly, fps_window-1)
                     )
+                    
                     self.processed_data['FPS_Smooth'] = smoothed_fps
                     
-                    # DEBUG: After smoothing
+                    # Post-smoothing validation
+                    after_min = smoothed_fps.min()
                     after_max = smoothed_fps.max()
-                    st.info(f"🎯 FPS smoothed: {before_max:.1f} → {after_max:.1f} max")
+                    st.write(f"**After smoothing: {after_min:.1f} - {after_max:.1f}**")
                     
-                    # Check for smoothing anomalies
-                    if after_max > before_max + 5:  # If smoothing increases max by more than 5
-                        st.warning(f"⚠️ Smoothing increased max FPS significantly: {before_max:.1f} → {after_max:.1f}")
+                    # 🚨 CRITICAL CHECK for smoothing artifacts
+                    if after_max > before_max + 5:
+                        st.error(f"🚨 **SMOOTHING BUG: Max increased from {before_max} to {after_max:.1f}**")
+                        st.error("**SMOOTHING IS CREATING IMPOSSIBLE VALUES!**")
+                    
+                    if after_max > input_fps_max + 5:
+                        st.error(f"🚨 **CRITICAL: Smoothed max ({after_max:.1f}) >> original max ({input_fps_max})**")
                 else:
                     self.processed_data['FPS_Smooth'] = self.processed_data['FPS']
             else:
-                self.processed_data['FPS_Smooth'] = self.processed_data['FPS']
+                st.write("✅ **FPS SMOOTHING DISABLED - DIRECT COPY**")
+                self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
             
-            # CPU Smoothing
+            # 🚨 DEBUG CPU Smoothing
             if enable_cpu_smooth:
+                st.write("⚠️ **CPU SMOOTHING ENABLED**")
                 data_length = len(self.processed_data)
                 cpu_window = min(max(cpu_window, 5), data_length)
                 if cpu_window % 2 == 0:
@@ -261,15 +376,23 @@ class FinalOptimizedGamingChartGenerator:
                 else:
                     self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)']
             else:
-                self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)']
+                st.write("✅ **CPU SMOOTHING DISABLED - DIRECT COPY**")
+                self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)'].copy()
             
-            # FINAL DEBUG: Show final data ranges
+            # 🚨 FINAL VALIDATION
+            st.markdown("### 🚨 FINAL PROCESSING VALIDATION")
             if 'FPS_Smooth' in self.processed_data:
                 final_fps_max = self.processed_data['FPS_Smooth'].max()
-                st.info(f"🔍 Final processed FPS max: {final_fps_max:.1f}")
+                final_fps_min = self.processed_data['FPS_Smooth'].min()
+                st.write(f"**Final FPS_Smooth range: {final_fps_min:.1f} - {final_fps_max:.1f}**")
                 
-                if final_fps_max > 80:
-                    st.error(f"🚨 ANOMALY DETECTED: Final FPS max is {final_fps_max:.1f} - This should not happen!")
+                if final_fps_max > input_fps_max + 0.1:
+                    st.error(f"🚨 **PROCESSING BUG DETECTED!**")
+                    st.error(f"**FPS_Smooth max ({final_fps_max:.1f}) > original max ({input_fps_max})**")
+                    st.error("**BUG IS IN PROCESSING PIPELINE!**")
+                    return False
+                else:
+                    st.success(f"✅ **Processing completed safely, FPS max: {final_fps_max:.1f}**")
             
             return True
             
@@ -430,15 +553,47 @@ class FinalOptimizedGamingChartGenerator:
         }
     
     def generate_processed_csv(self, game_title):
-        """Generate CSV file with processed FPS and CPU data"""
+        """Generate CSV with EMERGENCY debugging and validation"""
         if self.processed_data is None:
             return None
+        
+        # 🚨 EMERGENCY DEBUG - EXPORT PHASE
+        st.markdown("### 🚨 EMERGENCY DEBUG - EXPORT PHASE")
+        
+        # Check what we're about to export
+        export_fps = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
+        export_cpu = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
+        
+        export_fps_max = export_fps.max()
+        export_fps_min = export_fps.min()
+        
+        st.write(f"**About to export FPS range: {export_fps_min:.1f} - {export_fps_max:.1f}**")
+        
+        # 🚨 CRITICAL CHECK: Values > 70 before export
+        high_fps = export_fps[export_fps > 70]
+        if len(high_fps) > 0:
+            st.error(f"🚨 **ABOUT TO EXPORT {len(high_fps)} HIGH FPS VALUES!**")
+            st.error(f"**Sample high values: {list(high_fps.head(10))}**")
+            
+            # Find where these values are coming from
+            high_indices = export_fps[export_fps > 70].index
+            st.write("**High value locations:**")
+            for idx in high_indices[:5]:  # Show first 5
+                st.write(f"  Index {idx}: FPS={export_fps.iloc[idx]:.1f}, CPU={export_cpu.iloc[idx]:.1f}")
+            
+            # 🚨 BLOCK EXPORT if values are impossible
+            if export_fps_max > 80:
+                st.error(f"🚨 **EXPORT BLOCKED: Impossible FPS values detected (max: {export_fps_max:.1f})**")
+                st.error("**Please check your processing settings or report this bug!**")
+                return None
+        else:
+            st.success(f"✅ **Export data looks normal (max FPS: {export_fps_max:.1f})**")
         
         # Create clean DataFrame for export
         export_data = pd.DataFrame({
             'Time_Minutes': self.processed_data['TimeMinutes'],
-            'FPS': self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS'],
-            'CPU_Percent': self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
+            'FPS': export_fps,
+            'CPU_Percent': export_cpu
         })
         
         # Round to reasonable precision
@@ -446,9 +601,23 @@ class FinalOptimizedGamingChartGenerator:
         export_data['FPS'] = export_data['FPS'].round(1)
         export_data['CPU_Percent'] = export_data['CPU_Percent'].round(1)
         
+        # 🚨 FINAL VALIDATION after rounding
+        final_fps_max = export_data['FPS'].max()
+        st.write(f"**After rounding - Final FPS max: {final_fps_max}**")
+        
         # Convert to CSV
         csv_buffer = io.StringIO()
         export_data.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Generate filename with debug indicator
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{game_title.replace(' ', '_')}_DEBUG_processed_data_{timestamp}.csv"
+        
+        st.success(f"✅ **Export generated with filename: {filename}**")
+        st.info(f"📊 **Export contains {len(export_data)} rows with max FPS: {final_fps_max}**")
+        
+        return csv_content, filenamebuffer, index=False)
         csv_content = csv_buffer.getvalue()
         
         # Generate filename
