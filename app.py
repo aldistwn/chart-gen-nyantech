@@ -43,30 +43,18 @@ class OptimizedGamingChartGenerator:
             st.error(f"❌ {column_name} validation failed: {e}")
             return data, 0
     
-    def enhanced_column_detection(self, columns):
-        """Enhanced column detection with user feedback and multiple candidates"""
+    def strict_column_detection(self, columns):
+        """Strict column detection - only exact matches for FPS and CPU(%)"""
         
-        # Enhanced FPS detection
-        fps_keywords = ['fps', 'frame', 'framerate', 'frame_rate', 'frame rate', 'frame_per_second']
+        # Strict FPS detection - only "FPS" column
         fps_candidates = []
+        if 'FPS' in columns:
+            fps_candidates.append('FPS')
         
-        for col in columns:
-            col_lower = col.lower().replace('_', ' ').replace('-', ' ')
-            if any(keyword in col_lower for keyword in fps_keywords):
-                fps_candidates.append(col)
-        
-        # Enhanced CPU detection
-        cpu_keywords = ['cpu', 'processor', 'proc']
-        cpu_indicators = ['%', 'percent', 'usage', 'util', 'utilization']
+        # Strict CPU detection - only "CPU(%)" column
         cpu_candidates = []
-        
-        for col in columns:
-            col_lower = col.lower().replace('_', ' ').replace('-', ' ')
-            has_cpu = any(keyword in col_lower for keyword in cpu_keywords)
-            has_indicator = any(indicator in col_lower for indicator in cpu_indicators)
-            
-            if has_cpu and has_indicator:
-                cpu_candidates.append(col)
+        if 'CPU(%)' in columns:
+            cpu_candidates.append('CPU(%)')
         
         return fps_candidates, cpu_candidates
     
@@ -93,44 +81,36 @@ class OptimizedGamingChartGenerator:
             # Show basic info
             st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
             
-            # Enhanced column detection
+            # Strict column detection - only exact matches
             columns = list(self.original_data.columns)
-            fps_candidates, cpu_candidates = self.enhanced_column_detection(columns)
+            fps_candidates, cpu_candidates = self.strict_column_detection(columns)
             
             # User-friendly column selection
             st.markdown("### 🔍 Column Detection & Selection")
             
-            # FPS Column Selection
+            # FPS Column Selection - STRICT: only "FPS" column accepted
             if len(fps_candidates) == 0:
-                st.error("❌ No FPS columns detected!")
-                st.info("💡 Looking for columns containing: fps, frame, framerate")
+                st.error("❌ Required 'FPS' column not found!")
+                st.info("💡 Please ensure your CSV has a column labeled exactly: **FPS**")
                 
-                # Manual selection fallback
-                fps_col = st.selectbox("🎯 Manual FPS Column Selection:", columns, key="manual_fps")
-                if not fps_col:
-                    return False
-            elif len(fps_candidates) == 1:
-                fps_col = fps_candidates[0]
-                st.success(f"✅ FPS column auto-detected: **{fps_col}**")
+                # Show available columns for reference
+                st.info(f"Available columns: {', '.join(columns)}")
+                return False
             else:
-                st.info(f"🎯 Multiple FPS candidates found: {fps_candidates}")
-                fps_col = st.selectbox("🎯 Select FPS column:", fps_candidates, key="fps_select")
+                fps_col = 'FPS'  # Always use exact "FPS" column
+                st.success(f"✅ FPS column detected: **{fps_col}**")
             
-            # CPU Column Selection
+            # CPU Column Selection - STRICT: only "CPU(%)" column accepted
             if len(cpu_candidates) == 0:
-                st.error("❌ No CPU columns detected!")
-                st.info("💡 Looking for columns with CPU keywords + usage indicators")
+                st.error("❌ Required 'CPU(%)' column not found!")
+                st.info("💡 Please ensure your CSV has a column labeled exactly: **CPU(%)**")
                 
-                # Manual selection fallback
-                cpu_col = st.selectbox("🖥️ Manual CPU Column Selection:", columns, key="manual_cpu")
-                if not cpu_col:
-                    return False
-            elif len(cpu_candidates) == 1:
-                cpu_col = cpu_candidates[0]
-                st.success(f"✅ CPU column auto-detected: **{cpu_col}**")
+                # Show available columns for reference
+                st.info(f"Available columns: {', '.join(columns)}")
+                return False
             else:
-                st.info(f"🖥️ Multiple CPU candidates found: {cpu_candidates}")
-                cpu_col = st.selectbox("🖥️ Select CPU column:", cpu_candidates, key="cpu_select")
+                cpu_col = 'CPU(%)'  # Always use exact "CPU(%)" column
+                st.success(f"✅ CPU column detected: **{cpu_col}**")
             
             # Store column mapping
             self.column_mapping = {'fps': fps_col, 'cpu': cpu_col}
@@ -441,8 +421,8 @@ def main():
         smartphone_name = st.text_input("Smartphone Model", value="iPhone 15 Pro Max")
         
         st.header("🎨 Chart Colors")
-        fps_color = st.color_picker("FPS Color", "#FF6600")
-        cpu_color = st.color_picker("CPU Color", "#4A90E2")
+        fps_color = st.color_picker("FPS Color", "#4A90E2")  # Blue default
+        cpu_color = st.color_picker("CPU Color", "#FF6600")  # Orange default
         
         st.header("📊 Display Options")
         show_original = st.checkbox("Show Original Data", value=False,
@@ -566,11 +546,11 @@ def main():
         # Help section
         st.info("📤 Upload your gaming log CSV to get started!")
         
-        with st.expander("📋 Supported CSV Format"):
+        with st.expander("📋 Required CSV Format"):
             st.markdown("""
-            **Required columns:**
-            - FPS data (any column with 'fps' or 'frame' in name)
-            - CPU usage data (any column with 'cpu' and '%' or 'usage')
+            **STRICT Requirements:**
+            - Must have a column labeled exactly: **FPS**
+            - Must have a column labeled exactly: **CPU(%)**
             
             **Example CSV structure:**
             ```
@@ -579,6 +559,11 @@ def main():
             58,48.1,1,0
             62,42.8,0,0
             ```
+            
+            **Important Notes:**
+            - Column names are case-sensitive
+            - No variations accepted (fps, Fps, cpu usage, etc.)
+            - Exact spelling required: FPS and CPU(%)
             """)
 
 if __name__ == "__main__":
