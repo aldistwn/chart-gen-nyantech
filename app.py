@@ -620,6 +620,16 @@ class FinalOptimizedGamingChartGenerator:
         return csv_content, filenamebuffer, index=False)
         csv_content = csv_buffer.getvalue()
         
+        # Generate filename with debug indicator
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{game_title.replace(' ', '_')}_DEBUG_processed_data_{timestamp}.csv"
+        
+        st.success(f"✅ **Export generated with filename: {filename}**")
+        st.info(f"📊 **Export contains {len(export_data)} rows with max FPS: {final_fps_max}**")
+        
+        return csv_content, filenamebuffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{game_title.replace(' ', '_')}_processed_data_{timestamp}.csv"
