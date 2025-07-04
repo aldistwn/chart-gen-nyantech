@@ -13,23 +13,21 @@ st.set_page_config(
     layout="wide"
 )
 
-class OptimizedGamingChartGenerator:
+class FinalOptimizedGamingChartGenerator:
     def __init__(self):
         self.original_data = None
         self.processed_data = None
-        self.removed_indices = []  # Track removed indices for consistency
-        self.column_mapping = {}   # Track original column names
+        self.removed_indices = []
+        self.column_mapping = {}
     
     def validate_data(self, data, column_name):
         """Validate data quality and provide feedback"""
         try:
-            # Convert to numeric and check validity
             numeric_data = pd.to_numeric(data, errors='coerce')
             valid_count = numeric_data.notna().sum()
             total_count = len(data)
             valid_percentage = (valid_count / total_count) * 100
             
-            # Data quality indicators
             if valid_percentage < 80:
                 st.warning(f"⚠️ {column_name}: Low data quality ({valid_percentage:.1f}% valid)")
             elif valid_percentage < 95:
@@ -43,23 +41,8 @@ class OptimizedGamingChartGenerator:
             st.error(f"❌ {column_name} validation failed: {e}")
             return data, 0
     
-    def strict_column_detection(self, columns):
-        """Strict column detection - only exact matches for FPS and CPU(%)"""
-        
-        # Strict FPS detection - only "FPS" column
-        fps_candidates = []
-        if 'FPS' in columns:
-            fps_candidates.append('FPS')
-        
-        # Strict CPU detection - only "CPU(%)" column
-        cpu_candidates = []
-        if 'CPU(%)' in columns:
-            cpu_candidates.append('CPU(%)')
-        
-        return fps_candidates, cpu_candidates
-    
     def load_csv_data(self, uploaded_file):
-        """Enhanced CSV loading with validation and user feedback"""
+        """Enhanced CSV loading with strict column requirements"""
         try:
             # Try different delimiters
             delimiters = [',', ';', '\t', '|']
@@ -81,50 +64,50 @@ class OptimizedGamingChartGenerator:
             # Show basic info
             st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
             
-            # Strict column detection - only exact matches
+            # STRICT column detection - only exact matches
             columns = list(self.original_data.columns)
-            fps_candidates, cpu_candidates = self.strict_column_detection(columns)
             
-            # User-friendly column selection
-            st.markdown("### 🔍 Column Detection & Selection")
+            # Debug: Show all columns
+            with st.expander("🔍 DEBUG - All detected columns"):
+                for i, col in enumerate(columns):
+                    st.write(f"Column {i+1}: '{col}'")
             
-            # FPS Column Selection - STRICT: only "FPS" column accepted
-            if len(fps_candidates) == 0:
+            # Check for EXACT required columns
+            if 'FPS' not in columns:
                 st.error("❌ Required 'FPS' column not found!")
                 st.info("💡 Please ensure your CSV has a column labeled exactly: **FPS**")
-                
-                # Show available columns for reference
                 st.info(f"Available columns: {', '.join(columns)}")
                 return False
-            else:
-                fps_col = 'FPS'  # Always use exact "FPS" column
-                st.success(f"✅ FPS column detected: **{fps_col}**")
             
-            # CPU Column Selection - STRICT: only "CPU(%)" column accepted
-            if len(cpu_candidates) == 0:
+            if 'CPU(%)' not in columns:
                 st.error("❌ Required 'CPU(%)' column not found!")
                 st.info("💡 Please ensure your CSV has a column labeled exactly: **CPU(%)**")
-                
-                # Show available columns for reference
                 st.info(f"Available columns: {', '.join(columns)}")
                 return False
-            else:
-                cpu_col = 'CPU(%)'  # Always use exact "CPU(%)" column
-                st.success(f"✅ CPU column detected: **{cpu_col}**")
             
-            # Store column mapping
-            self.column_mapping = {'fps': fps_col, 'cpu': cpu_col}
+            # SUCCESS: Both columns found
+            st.success("✅ FPS column detected: **FPS**")
+            st.success("✅ CPU column detected: **CPU(%)**")
             
-            # Data validation and preview
-            st.markdown("### 📊 Data Validation & Preview")
-            
-            # Validate FPS data
-            fps_data, fps_quality = self.validate_data(self.original_data[fps_col], "FPS")
-            cpu_data, cpu_quality = self.validate_data(self.original_data[cpu_col], "CPU")
+            # Validate and extract data
+            fps_data, fps_quality = self.validate_data(self.original_data['FPS'], "FPS")
+            cpu_data, cpu_quality = self.validate_data(self.original_data['CPU(%)'], "CPU")
             
             if fps_quality < 50 or cpu_quality < 50:
                 st.error("❌ Data quality too low. Please check your data.")
                 return False
+            
+            # DEBUG: Show exact data ranges
+            st.markdown("### 📊 Data Validation & Preview")
+            
+            # Critical debug: Check for anomalous values
+            high_fps_count = len(fps_data[fps_data > 70])
+            very_high_fps_count = len(fps_data[fps_data > 80])
+            
+            if high_fps_count > 0:
+                st.warning(f"⚠️ Found {high_fps_count} FPS values > 70")
+            if very_high_fps_count > 0:
+                st.error(f"🚨 Found {very_high_fps_count} FPS values > 80 - This is unusual!")
             
             # Create standardized dataset
             self.original_data['FPS'] = fps_data
@@ -189,8 +172,16 @@ class OptimizedGamingChartGenerator:
             self.processed_data = pd.DataFrame({
                 'FPS': self.original_data.loc[keep_indices, 'FPS'].values,
                 'CPU(%)': self.original_data.loc[keep_indices, 'CPU(%)'].values,
-                'TimeMinutes': [i / 60 for i in range(len(keep_indices))]  # Recalculate time
+                'TimeMinutes': [i / 60 for i in range(len(keep_indices))]
             })
+            
+            # DEBUG: Verify processed data ranges
+            st.info(f"🔍 After outlier removal: FPS range {self.processed_data['FPS'].min():.1f} - {self.processed_data['FPS'].max():.1f}")
+            
+            # Check for any anomalous values after processing
+            high_fps_after = len(self.processed_data['FPS'][self.processed_data['FPS'] > 70])
+            if high_fps_after > 0:
+                st.warning(f"⚠️ Still {high_fps_after} values > 70 after outlier removal")
             
             # Feedback
             removal_count = len(removed_indices)
@@ -208,16 +199,16 @@ class OptimizedGamingChartGenerator:
     def apply_processing(self, fps_window=5, fps_poly=1, cpu_window=5, cpu_poly=1,
                         enable_fps_smooth=False, enable_cpu_smooth=False,
                         enable_outlier_removal=False, outlier_sensitivity='moderate'):
-        """Streamlined processing pipeline"""
+        """Streamlined processing pipeline with debugging"""
+        
+        st.info(f"🔍 Original data range: FPS {self.original_data['FPS'].min():.1f} - {self.original_data['FPS'].max():.1f}")
         
         # Initialize with original data
         if enable_outlier_removal:
-            # Apply outlier removal first
             if not self.remove_fps_outliers_optimized(outlier_sensitivity):
                 st.warning("⚠️ Outlier removal failed, using original data")
                 self.processed_data = self.original_data.copy()
         else:
-            # Use original data
             self.processed_data = self.original_data.copy()
         
         # Apply smoothing filters
@@ -230,12 +221,23 @@ class OptimizedGamingChartGenerator:
                     fps_window -= 1
                 
                 if data_length >= fps_window:
-                    self.processed_data['FPS_Smooth'] = savgol_filter(
+                    # DEBUG: Before smoothing
+                    before_max = self.processed_data['FPS'].max()
+                    
+                    smoothed_fps = savgol_filter(
                         self.processed_data['FPS'],
                         window_length=fps_window,
                         polyorder=min(fps_poly, fps_window-1)
                     )
-                    st.info(f"🎯 FPS smoothed (window: {fps_window}, poly: {fps_poly})")
+                    self.processed_data['FPS_Smooth'] = smoothed_fps
+                    
+                    # DEBUG: After smoothing
+                    after_max = smoothed_fps.max()
+                    st.info(f"🎯 FPS smoothed: {before_max:.1f} → {after_max:.1f} max")
+                    
+                    # Check for smoothing anomalies
+                    if after_max > before_max + 5:  # If smoothing increases max by more than 5
+                        st.warning(f"⚠️ Smoothing increased max FPS significantly: {before_max:.1f} → {after_max:.1f}")
                 else:
                     self.processed_data['FPS_Smooth'] = self.processed_data['FPS']
             else:
@@ -249,16 +251,25 @@ class OptimizedGamingChartGenerator:
                     cpu_window -= 1
                 
                 if data_length >= cpu_window:
-                    self.processed_data['CPU_Smooth'] = savgol_filter(
+                    smoothed_cpu = savgol_filter(
                         self.processed_data['CPU(%)'],
                         window_length=cpu_window,
                         polyorder=min(cpu_poly, cpu_window-1)
                     )
+                    self.processed_data['CPU_Smooth'] = smoothed_cpu
                     st.info(f"🖥️ CPU smoothed (window: {cpu_window}, poly: {cpu_poly})")
                 else:
                     self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)']
             else:
                 self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)']
+            
+            # FINAL DEBUG: Show final data ranges
+            if 'FPS_Smooth' in self.processed_data:
+                final_fps_max = self.processed_data['FPS_Smooth'].max()
+                st.info(f"🔍 Final processed FPS max: {final_fps_max:.1f}")
+                
+                if final_fps_max > 80:
+                    st.error(f"🚨 ANOMALY DETECTED: Final FPS max is {final_fps_max:.1f} - This should not happen!")
             
             return True
             
@@ -285,12 +296,19 @@ class OptimizedGamingChartGenerator:
         ax2.tick_params(axis='y', labelcolor='black', labelsize=10)
         ax2.set_ylim(0, 100)
         
-        # Determine primary dataset for axis limits
+        # Determine primary dataset
         primary_data = self.processed_data if self.processed_data is not None else self.original_data
+        
+        # DEBUG: Log what data is being used for chart
+        if 'FPS_Smooth' in primary_data:
+            chart_fps_max = primary_data['FPS_Smooth'].max()
+            st.info(f"🔍 Chart using FPS_Smooth with max: {chart_fps_max:.1f}")
+        else:
+            chart_fps_max = primary_data['FPS'].max()
+            st.info(f"🔍 Chart using FPS with max: {chart_fps_max:.1f}")
         
         # Plot original data (if requested and different from processed)
         if show_original and self.processed_data is not None and len(self.processed_data) != len(self.original_data):
-            # Show truncated original data for comparison
             orig_length = len(self.processed_data)
             orig_time = self.original_data['TimeMinutes'][:orig_length]
             orig_fps = self.original_data['FPS'][:orig_length]
@@ -319,9 +337,16 @@ class OptimizedGamingChartGenerator:
             ax2.plot(self.original_data['TimeMinutes'], self.original_data['CPU(%)'],
                     color=cpu_color, linewidth=2.5, label='CPU', alpha=0.9)
         
-        # Set limits
-        fps_max = max(primary_data['FPS_Smooth'] if 'FPS_Smooth' in primary_data else primary_data['FPS']) * 1.1
+        # Set limits - CRITICAL: Use actual data max, not inflated
+        if 'FPS_Smooth' in primary_data:
+            fps_max = max(primary_data['FPS_Smooth']) * 1.1
+        else:
+            fps_max = max(primary_data['FPS']) * 1.1
+        
         ax1.set_ylim(0, fps_max)
+        
+        # DEBUG: Log axis limits
+        st.info(f"🔍 Chart Y-axis set to: 0 - {fps_max:.1f}")
         
         # Title and styling
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
@@ -403,14 +428,42 @@ class OptimizedGamingChartGenerator:
             'frame_drops': len(fps_data[fps_data < 30]),
             'removed_frames': len(self.removed_indices) if hasattr(self, 'removed_indices') else 0
         }
+    
+    def generate_processed_csv(self, game_title):
+        """Generate CSV file with processed FPS and CPU data"""
+        if self.processed_data is None:
+            return None
+        
+        # Create clean DataFrame for export
+        export_data = pd.DataFrame({
+            'Time_Minutes': self.processed_data['TimeMinutes'],
+            'FPS': self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS'],
+            'CPU_Percent': self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
+        })
+        
+        # Round to reasonable precision
+        export_data['Time_Minutes'] = export_data['Time_Minutes'].round(3)
+        export_data['FPS'] = export_data['FPS'].round(1)
+        export_data['CPU_Percent'] = export_data['CPU_Percent'].round(1)
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        export_data.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{game_title.replace(' ', '_')}_processed_data_{timestamp}.csv"
+        
+        return csv_content, filename
 
 def main():
     # Header
-    st.title("🎮 Optimized Gaming Chart Generator")
-    st.markdown("Transform your gaming logs into professional charts with **enhanced data processing**")
+    st.title("🎮 Final Gaming Chart Generator")
+    st.markdown("Transform gaming logs with **strict column detection** and **CSV export**")
     
     # Initialize
-    generator = OptimizedGamingChartGenerator()
+    generator = FinalOptimizedGamingChartGenerator()
     
     # Sidebar configuration
     with st.sidebar:
@@ -422,7 +475,7 @@ def main():
         
         st.header("🎨 Chart Colors")
         fps_color = st.color_picker("FPS Color", "#4A90E2")  # Blue default
-        cpu_color = st.color_picker("CPU Color", "#FF6600")  # Orange default
+        cpu_color = st.color_picker("CPU Color", "#FF6600")   # Orange default
         
         st.header("📊 Display Options")
         show_original = st.checkbox("Show Original Data", value=False,
@@ -523,24 +576,51 @@ def main():
             with col4:
                 st.metric("Removed Frames", stats['removed_frames'])
             
-            # Export
-            st.header("💾 Export Chart")
-            if 'chart_fig' in locals():
-                img_buffer = io.BytesIO()
-                chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
-                                 facecolor='none', edgecolor='none', transparent=True)
-                img_buffer.seek(0)
-                
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{game_title.replace(' ', '_')}_chart_{timestamp}.png"
-                
-                st.download_button(
-                    label="📸 Download Chart (PNG)",
-                    data=img_buffer.getvalue(),
-                    file_name=filename,
-                    mime="image/png",
-                    use_container_width=True
-                )
+            # Export section
+            st.header("💾 Export Results")
+            
+            col1, col2 = st.columns(2)
+            
+            # PNG Export
+            with col1:
+                st.subheader("📸 Chart Export")
+                if 'chart_fig' in locals():
+                    img_buffer = io.BytesIO()
+                    chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
+                                     facecolor='none', edgecolor='none', transparent=True)
+                    img_buffer.seek(0)
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    png_filename = f"{game_title.replace(' ', '_')}_chart_{timestamp}.png"
+                    
+                    st.download_button(
+                        label="📸 Download Chart (PNG)",
+                        data=img_buffer.getvalue(),
+                        file_name=png_filename,
+                        mime="image/png",
+                        use_container_width=True
+                    )
+            
+            # CSV Export
+            with col2:
+                st.subheader("📄 Data Export")
+                if generator.processed_data is not None:
+                    csv_content, csv_filename = generator.generate_processed_csv(game_title)
+                    
+                    if csv_content:
+                        st.download_button(
+                            label="📄 Download Processed CSV",
+                            data=csv_content,
+                            file_name=csv_filename,
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        # Show preview of export data
+                        with st.expander("👀 Preview Export Data"):
+                            preview_df = pd.read_csv(io.StringIO(csv_content))
+                            st.dataframe(preview_df.head(10))
+                            st.info(f"📊 Export contains {len(preview_df)} rows with Time, FPS, and CPU data")
     
     else:
         # Help section
@@ -564,6 +644,22 @@ def main():
             - Column names are case-sensitive
             - No variations accepted (fps, Fps, cpu usage, etc.)
             - Exact spelling required: FPS and CPU(%)
+            """)
+        
+        with st.expander("💾 Export Features"):
+            st.markdown("""
+            **Chart Export (PNG):**
+            - High-resolution (300 DPI)
+            - Transparent background
+            - Professional gaming chart format
+            - Ready for presentations/reports
+            
+            **Data Export (CSV):**
+            - Clean processed FPS and CPU data
+            - Time_Minutes, FPS, CPU_Percent columns
+            - Rounded values for clarity
+            - Ready for further analysis
+            - Compatible with Excel/Google Sheets
             """)
 
 if __name__ == "__main__":
