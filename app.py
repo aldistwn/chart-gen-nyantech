@@ -227,6 +227,11 @@ class ProfessionalGamingChartGenerator:
         # Use processed data if available, otherwise original
         data_to_use = self.processed_data if self.processed_data is not None else self.original_data
         
+        # Check if data is valid
+        if data_to_use is None or len(data_to_use) == 0:
+            st.error("❌ No data available to create chart")
+            return None
+        
         # Create figure with high resolution
         fig, ax1 = plt.subplots(figsize=(19.2, 10.8))
         fig.patch.set_facecolor('#1e1e1e')  # Dark background like gaming apps
@@ -243,10 +248,20 @@ class ProfessionalGamingChartGenerator:
         ax2.tick_params(axis='y', labelcolor=cpu_color, labelsize=12, colors='white')
         ax2.set_ylim(0, 100)
         
-        # Get data
-        time_data = data_to_use['TimeMinutes']
-        fps_data = data_to_use['FPS']
-        cpu_data = data_to_use['CPU(%)']
+        # Get data and check validity
+        try:
+            time_data = data_to_use['TimeMinutes']
+            fps_data = data_to_use['FPS'].dropna()
+            cpu_data = data_to_use['CPU(%)'].dropna()
+            
+            # Check if data arrays are not empty
+            if len(fps_data) == 0 or len(cpu_data) == 0:
+                st.error("❌ Invalid data: FPS or CPU data is empty")
+                return None
+                
+        except KeyError as e:
+            st.error(f"❌ Missing required column: {e}")
+            return None
         
         # Convert time to seconds for formatting
         time_seconds = time_data * 60
@@ -273,12 +288,16 @@ class ProfessionalGamingChartGenerator:
         ax2.fill_between(time_seconds, 0, cpu_data, color=cpu_color, alpha=0.1, zorder=1)
         
         # Set FPS axis limits based on new logic
-        max_fps = max(fps_data)
+        max_fps = max(fps_data) if len(fps_data) > 0 else 30
         fps_axis_max = self.get_fps_axis_max(max_fps)
         ax1.set_ylim(0, fps_axis_max)
         
         # Custom time formatting for x-axis with maximum 6 ticks
-        max_time_seconds = max(time_seconds)
+        max_time_seconds = max(time_seconds) if len(time_seconds) > 0 else 60
+        
+        # Prevent division by zero
+        if max_time_seconds <= 0:
+            max_time_seconds = 60
         
         # Create approximately 6 ticks
         num_ticks = 6
@@ -356,6 +375,22 @@ class ProfessionalGamingChartGenerator:
         
         fps_data = data_to_use['FPS'].dropna()
         cpu_data = data_to_use['CPU(%)'].dropna()
+        
+        # Check if data is empty
+        if len(fps_data) == 0 or len(cpu_data) == 0:
+            return {
+                'grade': "❌ No Data",
+                'duration': 0.0,
+                'avg_fps': 0.0,
+                'min_fps': 0.0,
+                'max_fps': 0.0,
+                'avg_cpu': 0.0,
+                'max_cpu': 0.0,
+                'fps_above_60': 0.0,
+                'frame_drops': 0,
+                'removed_frames': 0
+            }
+        
         duration = len(data_to_use) / 60
         
         # Performance grading
@@ -369,6 +404,11 @@ class ProfessionalGamingChartGenerator:
         else:
             grade = "❌ Poor (<30 FPS)"
         
+        # Safe calculation for fps_above_60
+        fps_above_60_pct = 0.0
+        if len(fps_data) > 0:
+            fps_above_60_pct = (len(fps_data[fps_data >= 60]) / len(fps_data)) * 100
+        
         return {
             'grade': grade,
             'duration': round(duration, 1),
@@ -377,7 +417,7 @@ class ProfessionalGamingChartGenerator:
             'max_fps': round(fps_data.max(), 1),
             'avg_cpu': round(cpu_data.mean(), 1),
             'max_cpu': round(cpu_data.max(), 1),
-            'fps_above_60': round((len(fps_data[fps_data >= 60]) / len(fps_data)) * 100, 1),
+            'fps_above_60': round(fps_above_60_pct, 1),
             'frame_drops': len(fps_data[fps_data < 30]),
             'removed_frames': len(self.removed_indices) if hasattr(self, 'removed_indices') else 0
         }
@@ -485,22 +525,32 @@ def main():
                     game_title, game_settings, game_mode, smartphone_name,
                     fps_color, cpu_color, show_raw_data
                 )
-                st.pyplot(chart_fig, use_container_width=True)
+                
+                if chart_fig is not None:
+                    st.pyplot(chart_fig, use_container_width=True)
+                else:
+                    st.error("❌ Failed to create chart due to invalid data")
+                    st.stop()
             
             # Performance statistics
             stats = generator.get_statistics()
             
-            st.header("📈 Performance Analysis")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Performance Grade", stats['grade'])
-            with col2:
-                st.metric("FPS Range", f"{stats['min_fps']}-{stats['max_fps']}")
-            with col3:
-                st.metric("60+ FPS Time", f"{stats['fps_above_60']}%")
-            with col4:
-                st.metric("Frame Drops", stats['frame_drops'])
+            # Only show stats if we have valid data
+            if stats and stats.get('grade') != "❌ No Data":
+                st.header("📈 Performance Analysis")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Performance Grade", stats['grade'])
+                with col2:
+                    st.metric("FPS Range", f"{stats['min_fps']}-{stats['max_fps']}")
+                with col3:
+                    st.metric("60+ FPS Time", f"{stats['fps_above_60']}%")
+                with col4:
+                    st.metric("Frame Drops", stats['frame_drops'])
+            else:
+                st.error("❌ Cannot generate statistics: Invalid or empty data")
+                st.stop()
             
             # Export section
             st.header("💾 Export Results")
@@ -510,7 +560,7 @@ def main():
             # PNG Export
             with col1:
                 st.subheader("📸 Chart Export")
-                if 'chart_fig' in locals():
+                if chart_fig is not None:
                     img_buffer = io.BytesIO()
                     chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
                                      facecolor='#1e1e1e', edgecolor='none')
@@ -526,6 +576,8 @@ def main():
                         mime="image/png",
                         use_container_width=True
                     )
+                else:
+                    st.error("❌ Chart not available for download")
             
             # CSV Export
             with col2:
@@ -548,6 +600,8 @@ def main():
                         preview_df = pd.read_csv(io.StringIO(csv_content))
                         st.dataframe(preview_df.head(10))
                         st.info(f"📊 Export contains {len(preview_df)} rows")
+                else:
+                    st.error("❌ No data available for CSV export")
     
     else:
         # Help section
