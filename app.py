@@ -23,12 +23,22 @@ class ProfessionalGamingChartGenerator:
     def apply_intelligent_smoothing(self, data, window_size='auto', method='savgol'):
         """Apply intelligent smoothing to make data look professional like mobile gaming apps"""
         try:
-            if len(data) < 10:
-                return data
+            # Convert to pandas Series if numpy array
+            if hasattr(data, 'values'):
+                data_series = pd.Series(data.values)
+            else:
+                data_series = pd.Series(data)
+            
+            # Remove any NaN values first
+            data_clean = data_series.dropna()
+            
+            if len(data_clean) < 10:
+                st.warning("⚠️ Data too short for smoothing, using original")
+                return data_clean
             
             # Auto-determine optimal window size based on data length and noise level
             if window_size == 'auto':
-                data_length = len(data)
+                data_length = len(data_clean)
                 if data_length > 10000:
                     window = 51  # More aggressive smoothing for very long data
                 elif data_length > 5000:
@@ -43,28 +53,45 @@ class ProfessionalGamingChartGenerator:
             # Ensure window is odd and reasonable
             if window % 2 == 0:
                 window += 1
-            window = max(5, min(window, len(data) - 1))
+            window = max(5, min(window, len(data_clean) - 1))
             
             if method == 'savgol':
-                # Use Savitzky-Golay filter with conservative polynomial order
-                poly_order = min(3, window - 1)
-                smoothed = savgol_filter(data, window_length=window, polyorder=poly_order)
-                
-                # Apply additional light moving average for extra smoothness
-                if len(smoothed) > 10:
-                    smoothed = pd.Series(smoothed).rolling(window=5, center=True).mean().fillna(method='bfill').fillna(method='ffill')
-                
-                return smoothed
+                try:
+                    # Use Savitzky-Golay filter with conservative polynomial order
+                    poly_order = min(3, window - 1)
+                    if poly_order < 1:
+                        poly_order = 1
+                    
+                    smoothed = savgol_filter(data_clean.values, window_length=window, polyorder=poly_order)
+                    
+                    # Apply additional light moving average for extra smoothness
+                    if len(smoothed) > 10:
+                        smoothed_series = pd.Series(smoothed)
+                        smoothed = smoothed_series.rolling(window=5, center=True, min_periods=1).mean()
+                        smoothed = smoothed.fillna(method='bfill').fillna(method='ffill')
+                    
+                    return smoothed
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Savgol smoothing failed: {e}, trying moving average")
+                    # Fallback to moving average
+                    method = 'moving_average'
             
-            elif method == 'moving_average':
-                # Simple moving average
-                return pd.Series(data).rolling(window=window, center=True).mean().fillna(method='bfill').fillna(method='ffill')
+            if method == 'moving_average':
+                try:
+                    # Simple moving average
+                    smoothed = data_clean.rolling(window=window, center=True, min_periods=1).mean()
+                    smoothed = smoothed.fillna(method='bfill').fillna(method='ffill')
+                    return smoothed
+                except Exception as e:
+                    st.warning(f"⚠️ Moving average failed: {e}, using original data")
+                    return data_clean
             
-            return data
+            return data_clean
             
         except Exception as e:
-            st.warning(f"Smoothing failed: {e}, using original data")
-            return data
+            st.warning(f"⚠️ All smoothing failed: {e}, using original data")
+            return pd.Series(data) if not isinstance(data, pd.Series) else data
     
     def load_csv_data(self, uploaded_file):
         """Load CSV with professional gaming data processing"""
@@ -88,6 +115,7 @@ class ProfessionalGamingChartGenerator:
             
             # Column detection
             columns = list(self.original_data.columns)
+            st.info(f"🔍 Found columns: {', '.join(columns)}")
             
             # Check for EXACT required columns
             if 'FPS' not in columns:
@@ -104,23 +132,66 @@ class ProfessionalGamingChartGenerator:
             fps_data = pd.to_numeric(self.original_data['FPS'], errors='coerce')
             cpu_data = pd.to_numeric(self.original_data['CPU(%)'], errors='coerce')
             
-            # Remove NaN values
-            fps_data = fps_data.fillna(method='ffill').fillna(method='bfill')
-            cpu_data = cpu_data.fillna(method='ffill').fillna(method='bfill')
+            # Debug info
+            st.info(f"🔢 Original FPS data: {len(fps_data)} rows, {fps_data.isna().sum()} NaN values")
+            st.info(f"🔢 Original CPU data: {len(cpu_data)} rows, {cpu_data.isna().sum()} NaN values")
+            
+            # Handle NaN values more robustly
+            if fps_data.isna().all():
+                st.error("❌ All FPS data is invalid/NaN")
+                return False
+            
+            if cpu_data.isna().all():
+                st.error("❌ All CPU data is invalid/NaN")
+                return False
+            
+            # Fill NaN values
+            fps_data = fps_data.fillna(method='ffill').fillna(method='bfill').fillna(0)
+            cpu_data = cpu_data.fillna(method='ffill').fillna(method='bfill').fillna(0)
+            
+            # Check if we still have valid data
+            if len(fps_data) == 0 or len(cpu_data) == 0:
+                st.error("❌ No valid FPS or CPU data after cleaning")
+                return False
             
             # Apply intelligent smoothing by default for professional look
             st.info("🎯 Applying professional smoothing for clean visualization...")
             
-            # Apply smart smoothing
-            fps_smoothed = self.apply_intelligent_smoothing(fps_data, window_size='auto', method='savgol')
-            cpu_smoothed = self.apply_intelligent_smoothing(cpu_data, window_size='auto', method='savgol')
+            try:
+                # Apply smart smoothing with fallback
+                fps_smoothed = self.apply_intelligent_smoothing(fps_data, window_size='auto', method='savgol')
+                cpu_smoothed = self.apply_intelligent_smoothing(cpu_data, window_size='auto', method='savgol')
+                
+                # Verify smoothing didn't break data
+                if hasattr(fps_smoothed, '__len__') and len(fps_smoothed) > 0:
+                    fps_final = fps_smoothed
+                else:
+                    st.warning("⚠️ Smoothing failed for FPS, using original data")
+                    fps_final = fps_data
+                    
+                if hasattr(cpu_smoothed, '__len__') and len(cpu_smoothed) > 0:
+                    cpu_final = cpu_smoothed
+                else:
+                    st.warning("⚠️ Smoothing failed for CPU, using original data")
+                    cpu_final = cpu_data
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Smoothing failed ({e}), using original data")
+                fps_final = fps_data
+                cpu_final = cpu_data
             
             # Create processed dataset
             self.original_data['FPS_Raw'] = fps_data
             self.original_data['CPU_Raw'] = cpu_data
-            self.original_data['FPS'] = fps_smoothed
-            self.original_data['CPU(%)'] = cpu_smoothed
+            self.original_data['FPS'] = fps_final
+            self.original_data['CPU(%)'] = cpu_final
             self.original_data['TimeMinutes'] = [i / 60 for i in range(len(self.original_data))]
+            
+            # Verify final data
+            final_fps = pd.Series(fps_final).dropna()
+            final_cpu = pd.Series(cpu_final).dropna()
+            
+            st.success(f"✅ Final data ready: {len(final_fps)} FPS points, {len(final_cpu)} CPU points")
             
             # Show data quality info
             st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
@@ -128,16 +199,17 @@ class ProfessionalGamingChartGenerator:
             # Show data preview
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("📈 FPS Range", f"{fps_smoothed.min():.1f} - {fps_smoothed.max():.1f}")
-                st.metric("📊 FPS Average", f"{fps_smoothed.mean():.1f}")
+                st.metric("📈 FPS Range", f"{final_fps.min():.1f} - {final_fps.max():.1f}")
+                st.metric("📊 FPS Average", f"{final_fps.mean():.1f}")
             with col2:
-                st.metric("🖥️ CPU Range", f"{cpu_smoothed.min():.1f}% - {cpu_smoothed.max():.1f}%")
-                st.metric("📊 CPU Average", f"{cpu_smoothed.mean():.1f}%")
+                st.metric("🖥️ CPU Range", f"{final_cpu.min():.1f}% - {final_cpu.max():.1f}%")
+                st.metric("📊 CPU Average", f"{final_cpu.mean():.1f}%")
             
             return True
             
         except Exception as e:
             st.error(f"❌ Error loading CSV: {e}")
+            st.error(f"📋 Debug info: {str(e)}")
             return False
     
     def apply_additional_processing(self, enable_outlier_removal=False, outlier_sensitivity='moderate'):
@@ -146,11 +218,17 @@ class ProfessionalGamingChartGenerator:
         if not enable_outlier_removal:
             # Just copy the already-smoothed data
             self.processed_data = self.original_data.copy()
+            st.success("✅ Using smoothed data without outlier removal")
             return True
         
         try:
             # Apply outlier removal on already-smoothed data
             fps_data = self.original_data['FPS'].dropna()
+            
+            if len(fps_data) == 0:
+                st.error("❌ No FPS data available for outlier removal")
+                self.processed_data = self.original_data.copy()
+                return False
             
             # Calculate thresholds
             percentile_1 = fps_data.quantile(0.01)
@@ -167,12 +245,16 @@ class ProfessionalGamingChartGenerator:
             keep_mask = fps_data >= threshold
             keep_indices = fps_data[keep_mask].index.tolist()
             
-            # Create processed dataset
-            self.processed_data = pd.DataFrame({
-                'FPS': self.original_data.loc[keep_indices, 'FPS'].values,
-                'CPU(%)': self.original_data.loc[keep_indices, 'CPU(%)'].values,
-                'TimeMinutes': [i / 60 for i in range(len(keep_indices))]
-            })
+            if len(keep_indices) == 0:
+                st.warning("⚠️ Outlier removal would remove all data, skipping")
+                self.processed_data = self.original_data.copy()
+                return True
+            
+            # Create processed dataset with same structure
+            processed_data = self.original_data.iloc[keep_indices].copy()
+            processed_data['TimeMinutes'] = [i / 60 for i in range(len(processed_data))]
+            
+            self.processed_data = processed_data
             
             # Store removed indices
             removed_indices = fps_data[~keep_mask].index.tolist()
@@ -232,6 +314,9 @@ class ProfessionalGamingChartGenerator:
             st.error("❌ No data available to create chart")
             return None
         
+        # Debug info
+        st.info(f"🔍 Chart data source: {len(data_to_use)} rows")
+        
         # Create figure with high resolution
         fig, ax1 = plt.subplots(figsize=(19.2, 10.8))
         fig.patch.set_facecolor('#1e1e1e')  # Dark background like gaming apps
@@ -251,16 +336,53 @@ class ProfessionalGamingChartGenerator:
         # Get data and check validity
         try:
             time_data = data_to_use['TimeMinutes']
-            fps_data = data_to_use['FPS'].dropna()
-            cpu_data = data_to_use['CPU(%)'].dropna()
+            
+            # More robust data extraction
+            if 'FPS' in data_to_use.columns:
+                fps_raw = data_to_use['FPS']
+                fps_data = pd.Series(fps_raw).dropna()
+            else:
+                st.error("❌ FPS column missing in processed data")
+                return None
+                
+            if 'CPU(%)' in data_to_use.columns:
+                cpu_raw = data_to_use['CPU(%)']
+                cpu_data = pd.Series(cpu_raw).dropna()
+            else:
+                st.error("❌ CPU(%) column missing in processed data")
+                return None
+            
+            # Debug data info
+            st.info(f"🔢 Chart FPS data: {len(fps_data)} valid points")
+            st.info(f"🔢 Chart CPU data: {len(cpu_data)} valid points")
             
             # Check if data arrays are not empty
-            if len(fps_data) == 0 or len(cpu_data) == 0:
-                st.error("❌ Invalid data: FPS or CPU data is empty")
+            if len(fps_data) == 0:
+                st.error("❌ FPS data is empty after filtering")
                 return None
+                
+            if len(cpu_data) == 0:
+                st.error("❌ CPU data is empty after filtering")
+                return None
+                
+            # Ensure time data matches
+            min_length = min(len(time_data), len(fps_data), len(cpu_data))
+            if min_length == 0:
+                st.error("❌ No matching data points for chart")
+                return None
+                
+            # Trim data to same length
+            time_data = time_data[:min_length]
+            fps_data = fps_data[:min_length]
+            cpu_data = cpu_data[:min_length]
+            
+            st.success(f"✅ Chart ready with {min_length} data points")
                 
         except KeyError as e:
             st.error(f"❌ Missing required column: {e}")
+            return None
+        except Exception as e:
+            st.error(f"❌ Data processing error: {e}")
             return None
         
         # Convert time to seconds for formatting
@@ -268,14 +390,17 @@ class ProfessionalGamingChartGenerator:
         
         # Plot raw data (if requested) - very faded
         if show_raw_data and 'FPS_Raw' in self.original_data:
-            raw_time = self.original_data['TimeMinutes'][:len(time_data)] * 60
-            raw_fps = self.original_data['FPS_Raw'][:len(time_data)]
-            raw_cpu = self.original_data['CPU_Raw'][:len(time_data)]
-            
-            ax1.plot(raw_time, raw_fps, color=fps_color, linewidth=0.5, 
-                    alpha=0.15, zorder=1, label='FPS (Raw)')
-            ax2.plot(raw_time, raw_cpu, color=cpu_color, linewidth=0.5,
-                    alpha=0.15, zorder=1, label='CPU (Raw)')
+            try:
+                raw_time = self.original_data['TimeMinutes'][:len(time_data)] * 60
+                raw_fps = self.original_data['FPS_Raw'][:len(time_data)]
+                raw_cpu = self.original_data['CPU_Raw'][:len(time_data)]
+                
+                ax1.plot(raw_time, raw_fps, color=fps_color, linewidth=0.5, 
+                        alpha=0.15, zorder=1, label='FPS (Raw)')
+                ax2.plot(raw_time, raw_cpu, color=cpu_color, linewidth=0.5,
+                        alpha=0.15, zorder=1, label='CPU (Raw)')
+            except Exception as e:
+                st.warning(f"⚠️ Could not plot raw data: {e}")
         
         # Plot main smoothed data - prominent and clean
         ax1.plot(time_seconds, fps_data, color=fps_color, linewidth=3.0,
