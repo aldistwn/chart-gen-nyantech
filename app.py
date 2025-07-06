@@ -5,6 +5,7 @@ import numpy as np
 import io
 from datetime import datetime
 from scipy.signal import savgol_filter
+import matplotlib.ticker as ticker
 
 # Page configuration
 st.set_page_config(
@@ -189,6 +190,36 @@ class ProfessionalGamingChartGenerator:
             self.processed_data = self.original_data.copy()
             return False
     
+    def get_fps_axis_max(self, max_fps):
+        """Determine FPS axis maximum based on data maximum"""
+        if max_fps <= 31:
+            return 30
+        elif max_fps >= 145:
+            return 144
+        elif max_fps >= 121:
+            return 120
+        elif max_fps >= 91:
+            return 90
+        elif max_fps >= 61:
+            return 60
+        else:
+            return 30  # default fallback
+    
+    def format_time_label(self, seconds):
+        """Format time label according to requirements"""
+        total_seconds = int(seconds)
+        
+        if total_seconds < 60:
+            return f"{total_seconds} s"
+        elif total_seconds < 3600:
+            minutes = total_seconds // 60
+            remaining_seconds = total_seconds % 60
+            return f"{minutes} m {remaining_seconds} s"
+        else:
+            hours = total_seconds // 3600
+            remaining_minutes = (total_seconds % 3600) // 60
+            return f"{hours} h {remaining_minutes} m"
+    
     def create_professional_chart(self, game_title, game_settings, game_mode, smartphone_name,
                                 fps_color, cpu_color, show_raw_data=False):
         """Create professional gaming chart like mobile gaming monitoring apps"""
@@ -201,7 +232,7 @@ class ProfessionalGamingChartGenerator:
         fig.patch.set_facecolor('#1e1e1e')  # Dark background like gaming apps
         
         # Setup primary axis (FPS)
-        ax1.set_xlabel('Time (minutes)', fontsize=14, fontweight='bold', color='white')
+        ax1.set_xlabel('Time', fontsize=14, fontweight='bold', color='white')
         ax1.set_ylabel('FPS', color=fps_color, fontsize=14, fontweight='bold')
         ax1.tick_params(axis='y', labelcolor=fps_color, labelsize=12, colors='white')
         ax1.tick_params(axis='x', labelcolor='white', labelsize=12, colors='white')
@@ -217,9 +248,12 @@ class ProfessionalGamingChartGenerator:
         fps_data = data_to_use['FPS']
         cpu_data = data_to_use['CPU(%)']
         
+        # Convert time to seconds for formatting
+        time_seconds = time_data * 60
+        
         # Plot raw data (if requested) - very faded
         if show_raw_data and 'FPS_Raw' in self.original_data:
-            raw_time = self.original_data['TimeMinutes'][:len(time_data)]
+            raw_time = self.original_data['TimeMinutes'][:len(time_data)] * 60
             raw_fps = self.original_data['FPS_Raw'][:len(time_data)]
             raw_cpu = self.original_data['CPU_Raw'][:len(time_data)]
             
@@ -229,18 +263,37 @@ class ProfessionalGamingChartGenerator:
                     alpha=0.15, zorder=1, label='CPU (Raw)')
         
         # Plot main smoothed data - prominent and clean
-        ax1.plot(time_data, fps_data, color=fps_color, linewidth=3.0,
+        ax1.plot(time_seconds, fps_data, color=fps_color, linewidth=3.0,
                 alpha=0.9, zorder=4, label='FPS', solid_capstyle='round')
-        ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=3.0,
+        ax2.plot(time_seconds, cpu_data, color=cpu_color, linewidth=3.0,
                 alpha=0.9, zorder=3, label='CPU', solid_capstyle='round')
         
         # Add fill areas for better visual appeal (like gaming apps)
-        ax1.fill_between(time_data, 0, fps_data, color=fps_color, alpha=0.1, zorder=2)
-        ax2.fill_between(time_data, 0, cpu_data, color=cpu_color, alpha=0.1, zorder=1)
+        ax1.fill_between(time_seconds, 0, fps_data, color=fps_color, alpha=0.1, zorder=2)
+        ax2.fill_between(time_seconds, 0, cpu_data, color=cpu_color, alpha=0.1, zorder=1)
         
-        # Set axis limits
-        fps_max = max(fps_data) * 1.05  # Small padding
-        ax1.set_ylim(0, fps_max)
+        # Set FPS axis limits based on new logic
+        max_fps = max(fps_data)
+        fps_axis_max = self.get_fps_axis_max(max_fps)
+        ax1.set_ylim(0, fps_axis_max)
+        
+        # Custom time formatting for x-axis with maximum 6 ticks
+        max_time_seconds = max(time_seconds)
+        
+        # Create approximately 6 ticks
+        num_ticks = 6
+        tick_interval = max_time_seconds / (num_ticks - 1)
+        tick_positions = [i * tick_interval for i in range(num_ticks)]
+        
+        # Format tick labels
+        tick_labels = [self.format_time_label(pos) for pos in tick_positions]
+        
+        # Set custom ticks
+        ax1.set_xticks(tick_positions)
+        ax1.set_xticklabels(tick_labels)
+        
+        # Set x-axis limits
+        ax1.set_xlim(0, max_time_seconds)
         
         # Professional title styling
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
@@ -521,6 +574,8 @@ def main():
             - **Mobile gaming app appearance** similar to gaming monitors
             - **High-quality exports** ready for presentations
             - **Automatic optimization** based on data characteristics
+            - **Smart FPS axis scaling** (30/60/90/120/144 FPS)
+            - **Custom time formatting** with optimal tick spacing
             """)
 
 if __name__ == "__main__":
