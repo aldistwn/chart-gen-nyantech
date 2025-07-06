@@ -541,6 +541,9 @@ def main():
                                     help="Show processed/smoothed data as main line")
         
         st.header("🔧 Data Processing")
+
+        st.header("💾 Export Settings")
+        enable_csv_export = st.toggle("📄 Enable CSV Export", value=True)
         
         # Outlier Removal
         enable_outlier_removal = st.toggle("🚫 Remove Worst FPS Frames", value=False,
@@ -662,31 +665,33 @@ def main():
             # CSV Export
             with col2:
                 st.subheader("📄 Data Export")
-                if generator.processed_data is not None:
-                    result = generator.generate_processed_csv(game_title)
+                
+                if enable_csv_export:
+                    if generator.processed_data is not None:
+                        result = generator.generate_processed_csv(game_title)
                     
-                    if result is not None:
-                        csv_content, csv_filename = result
+                        if result is not None:
+                            csv_content, csv_filename = result
                         
-                        st.download_button(
-                            label="📄 Download Processed CSV",
-                            data=csv_content,
-                            file_name=csv_filename,
-                            mime="text/csv",
-                            use_container_width=True
-                        )
+                            st.download_button(
+                                label="📄 Download Processed CSV",
+                                data=csv_content,
+                                file_name=csv_filename,
+                                mime="text/csv",
+                                use_container_width=True
+                            )
                         
                         # Show preview of export data
-                        with st.expander("👀 Preview Export Data"):
-                            preview_df = pd.read_csv(io.StringIO(csv_content))
-                            st.dataframe(preview_df.head(10))
-                            st.info(f"📊 Export contains {len(preview_df)} rows with Time, FPS, and CPU data")
-                    else:
-                        st.error("❌ Export blocked due to data validation issues")
+                            with st.expander("👀 Preview Export Data"):
+                                preview_df = pd.read_csv(io.StringIO(csv_content))
+                                st.dataframe(preview_df.head(10))
+                                st.info(f"📊 Export contains {len(preview_df)} rows with Time, FPS, and CPU data")
+                        else:
+                            st.error("❌ Export blocked due to data validation issues")
     
-    else:
-        # Help section
-        st.info("📤 Upload your gaming log CSV to get started!")
+            else:
+            # Help section
+                st.info("📤 Upload your gaming log CSV to get started!")
         
         with st.expander("📋 Required CSV Format"):
             st.markdown("""
