@@ -322,9 +322,16 @@ class FinalOptimizedGamingChartGenerator:
         # Plot processed/main data
         if show_processed and self.processed_data is not None:
             time_data = self.processed_data['TimeMinutes']
-            fps_data = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
-            cpu_data = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
-            
+            if 'FPS_Smooth' in self.processed_data.columns and self.use_fps_smooth:
+                fps_data = self.processed_data['FPS_Smooth']
+            else:
+                fps_data = self.processed_data['FPS']
+
+            if 'CPU_Smooth' in self.processed_data.columns and self.use_cpu_smooth:
+                cpu_data = self.processed_data['CPU_Smooth']
+            else:
+                cpu_data = self.processed_data['CPU(%)']
+                
             # 💨 Plot CPU dulu (di bawah)
             if not hide_cpu:
                 ax2.plot(
