@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import io
 from datetime import datetime
-from scipy.signal import savgol_filter
-import matplotlib.ticker as ticker
 
 # Page configuration
 st.set_page_config(
@@ -18,258 +16,56 @@ class ProfessionalGamingChartGenerator:
     def __init__(self):
         self.original_data = None
         self.processed_data = None
-        self.removed_indices = []
-    
-    def apply_intelligent_smoothing(self, data, window_size='auto', method='savgol'):
-        """Apply intelligent smoothing to make data look professional like mobile gaming apps"""
-        try:
-            # Convert to pandas Series if numpy array
-            if hasattr(data, 'values'):
-                data_series = pd.Series(data.values)
-            else:
-                data_series = pd.Series(data)
-            
-            # Remove any NaN values first
-            data_clean = data_series.dropna()
-            
-            if len(data_clean) < 10:
-                st.warning("⚠️ Data too short for smoothing, using original")
-                return data_clean
-            
-            # Auto-determine optimal window size based on data length and noise level
-            if window_size == 'auto':
-                data_length = len(data_clean)
-                if data_length > 10000:
-                    window = 51  # More aggressive smoothing for very long data
-                elif data_length > 5000:
-                    window = 31  # Moderate smoothing
-                elif data_length > 1000:
-                    window = 21  # Standard smoothing
-                else:
-                    window = min(11, data_length // 3)  # Conservative for short data
-            else:
-                window = window_size
-            
-            # Ensure window is odd and reasonable
-            if window % 2 == 0:
-                window += 1
-            window = max(5, min(window, len(data_clean) - 1))
-            
-            if method == 'savgol':
-                try:
-                    # Use Savitzky-Golay filter with conservative polynomial order
-                    poly_order = min(3, window - 1)
-                    if poly_order < 1:
-                        poly_order = 1
-                    
-                    smoothed = savgol_filter(data_clean.values, window_length=window, polyorder=poly_order)
-                    
-                    # Apply additional light moving average for extra smoothness
-                    if len(smoothed) > 10:
-                        smoothed_series = pd.Series(smoothed)
-                        smoothed = smoothed_series.rolling(window=5, center=True, min_periods=1).mean()
-                        smoothed = smoothed.fillna(method='bfill').fillna(method='ffill')
-                    
-                    return smoothed
-                    
-                except Exception as e:
-                    st.warning(f"⚠️ Savgol smoothing failed: {e}, trying moving average")
-                    # Fallback to moving average
-                    method = 'moving_average'
-            
-            if method == 'moving_average':
-                try:
-                    # Simple moving average
-                    smoothed = data_clean.rolling(window=window, center=True, min_periods=1).mean()
-                    smoothed = smoothed.fillna(method='bfill').fillna(method='ffill')
-                    return smoothed
-                except Exception as e:
-                    st.warning(f"⚠️ Moving average failed: {e}, using original data")
-                    return data_clean
-            
-            return data_clean
-            
-        except Exception as e:
-            st.warning(f"⚠️ All smoothing failed: {e}, using original data")
-            return pd.Series(data) if not isinstance(data, pd.Series) else data
     
     def load_csv_data(self, uploaded_file):
         """Load CSV with professional gaming data processing"""
         try:
-            # Try different delimiters
-            delimiters = [',', ';', '\t', '|']
+            # Read CSV
+            uploaded_file.seek(0)
+            self.original_data = pd.read_csv(uploaded_file)
             
-            for delimiter in delimiters:
-                try:
-                    uploaded_file.seek(0)
-                    self.original_data = pd.read_csv(uploaded_file, delimiter=delimiter)
-                    if len(self.original_data.columns) > 1:
-                        st.success(f"✅ CSV parsed successfully with delimiter: '{delimiter}'")
-                        break
-                except:
-                    continue
-            
-            if self.original_data is None or len(self.original_data.columns) <= 1:
-                st.error("❌ Cannot parse CSV file. Please check format.")
-                return False
-            
-            # Column detection
-            columns = list(self.original_data.columns)
-            st.info(f"🔍 Found columns: {', '.join(columns)}")
-            
-            # Check for EXACT required columns
-            if 'FPS' not in columns:
+            # Check for required columns
+            if 'FPS' not in self.original_data.columns:
                 st.error("❌ Required 'FPS' column not found!")
-                st.info(f"Available columns: {', '.join(columns)}")
                 return False
             
-            if 'CPU(%)' not in columns:
+            if 'CPU(%)' not in self.original_data.columns:
                 st.error("❌ Required 'CPU(%)' column not found!")
-                st.info(f"Available columns: {', '.join(columns)}")
                 return False
             
-            # Extract and validate data
+            # Extract data
             fps_data = pd.to_numeric(self.original_data['FPS'], errors='coerce')
             cpu_data = pd.to_numeric(self.original_data['CPU(%)'], errors='coerce')
             
-            # Debug info
-            st.info(f"🔢 Original FPS data: {len(fps_data)} rows, {fps_data.isna().sum()} NaN values")
-            st.info(f"🔢 Original CPU data: {len(cpu_data)} rows, {cpu_data.isna().sum()} NaN values")
+            # Basic cleaning - fill NaN with interpolation
+            fps_data = fps_data.interpolate().fillna(method='bfill').fillna(method='ffill')
+            cpu_data = cpu_data.interpolate().fillna(method='bfill').fillna(method='ffill')
             
-            # Handle NaN values more robustly
-            if fps_data.isna().all():
-                st.error("❌ All FPS data is invalid/NaN")
-                return False
+            # Create time column
+            time_minutes = [i / 60 for i in range(len(self.original_data))]
             
-            if cpu_data.isna().all():
-                st.error("❌ All CPU data is invalid/NaN")
-                return False
+            # Store processed data
+            self.processed_data = pd.DataFrame({
+                'FPS': fps_data,
+                'CPU(%)': cpu_data,
+                'TimeMinutes': time_minutes
+            })
             
-            # Fill NaN values
-            fps_data = fps_data.fillna(method='ffill').fillna(method='bfill').fillna(0)
-            cpu_data = cpu_data.fillna(method='ffill').fillna(method='bfill').fillna(0)
+            st.success(f"✅ Data loaded: {len(self.processed_data)} rows")
             
-            # Check if we still have valid data
-            if len(fps_data) == 0 or len(cpu_data) == 0:
-                st.error("❌ No valid FPS or CPU data after cleaning")
-                return False
-            
-            # Apply intelligent smoothing by default for professional look
-            st.info("🎯 Applying professional smoothing for clean visualization...")
-            
-            try:
-                # Apply smart smoothing with fallback
-                fps_smoothed = self.apply_intelligent_smoothing(fps_data, window_size='auto', method='savgol')
-                cpu_smoothed = self.apply_intelligent_smoothing(cpu_data, window_size='auto', method='savgol')
-                
-                # Verify smoothing didn't break data
-                if hasattr(fps_smoothed, '__len__') and len(fps_smoothed) > 0:
-                    fps_final = fps_smoothed
-                else:
-                    st.warning("⚠️ Smoothing failed for FPS, using original data")
-                    fps_final = fps_data
-                    
-                if hasattr(cpu_smoothed, '__len__') and len(cpu_smoothed) > 0:
-                    cpu_final = cpu_smoothed
-                else:
-                    st.warning("⚠️ Smoothing failed for CPU, using original data")
-                    cpu_final = cpu_data
-                    
-            except Exception as e:
-                st.warning(f"⚠️ Smoothing failed ({e}), using original data")
-                fps_final = fps_data
-                cpu_final = cpu_data
-            
-            # Create processed dataset
-            self.original_data['FPS_Raw'] = fps_data
-            self.original_data['CPU_Raw'] = cpu_data
-            self.original_data['FPS'] = fps_final
-            self.original_data['CPU(%)'] = cpu_final
-            self.original_data['TimeMinutes'] = [i / 60 for i in range(len(self.original_data))]
-            
-            # Verify final data
-            final_fps = pd.Series(fps_final).dropna()
-            final_cpu = pd.Series(cpu_final).dropna()
-            
-            st.success(f"✅ Final data ready: {len(final_fps)} FPS points, {len(final_cpu)} CPU points")
-            
-            # Show data quality info
-            st.info(f"📊 Dataset: {len(self.original_data)} rows × {len(self.original_data.columns)} columns")
-            
-            # Show data preview
+            # Show preview
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("📈 FPS Range", f"{final_fps.min():.1f} - {final_fps.max():.1f}")
-                st.metric("📊 FPS Average", f"{final_fps.mean():.1f}")
+                st.metric("📈 FPS Range", f"{fps_data.min():.1f} - {fps_data.max():.1f}")
+                st.metric("📊 FPS Average", f"{fps_data.mean():.1f}")
             with col2:
-                st.metric("🖥️ CPU Range", f"{final_cpu.min():.1f}% - {final_cpu.max():.1f}%")
-                st.metric("📊 CPU Average", f"{final_cpu.mean():.1f}%")
+                st.metric("🖥️ CPU Range", f"{cpu_data.min():.1f}% - {cpu_data.max():.1f}%")
+                st.metric("📊 CPU Average", f"{cpu_data.mean():.1f}%")
             
             return True
             
         except Exception as e:
             st.error(f"❌ Error loading CSV: {e}")
-            st.error(f"📋 Debug info: {str(e)}")
-            return False
-    
-    def apply_additional_processing(self, enable_outlier_removal=False, outlier_sensitivity='moderate'):
-        """Apply additional processing if needed"""
-        
-        if not enable_outlier_removal:
-            # Just copy the already-smoothed data
-            self.processed_data = self.original_data.copy()
-            st.success("✅ Using smoothed data without outlier removal")
-            return True
-        
-        try:
-            # Apply outlier removal on already-smoothed data
-            fps_data = self.original_data['FPS'].dropna()
-            
-            if len(fps_data) == 0:
-                st.error("❌ No FPS data available for outlier removal")
-                self.processed_data = self.original_data.copy()
-                return False
-            
-            # Calculate thresholds
-            percentile_1 = fps_data.quantile(0.01)
-            percentile_5 = fps_data.quantile(0.05)
-            
-            thresholds = {
-                'conservative': percentile_1,
-                'moderate': percentile_1 * 1.1,
-                'aggressive': percentile_5
-            }
-            threshold = thresholds.get(outlier_sensitivity, percentile_1)
-            
-            # Get indices to keep
-            keep_mask = fps_data >= threshold
-            keep_indices = fps_data[keep_mask].index.tolist()
-            
-            if len(keep_indices) == 0:
-                st.warning("⚠️ Outlier removal would remove all data, skipping")
-                self.processed_data = self.original_data.copy()
-                return True
-            
-            # Create processed dataset with same structure
-            processed_data = self.original_data.iloc[keep_indices].copy()
-            processed_data['TimeMinutes'] = [i / 60 for i in range(len(processed_data))]
-            
-            self.processed_data = processed_data
-            
-            # Store removed indices
-            removed_indices = fps_data[~keep_mask].index.tolist()
-            self.removed_indices = removed_indices
-            
-            removal_count = len(removed_indices)
-            removal_pct = (removal_count / len(fps_data)) * 100
-            
-            st.success(f"✅ Removed {removal_count} outlier frames ({removal_pct:.1f}%)")
-            
-            return True
-            
-        except Exception as e:
-            st.error(f"❌ Additional processing failed: {e}")
-            self.processed_data = self.original_data.copy()
             return False
     
     def get_fps_axis_max(self, max_fps):
@@ -285,7 +81,7 @@ class ProfessionalGamingChartGenerator:
         elif max_fps >= 61:
             return 60
         else:
-            return 30  # default fallback
+            return 30
     
     def format_time_label(self, seconds):
         """Format time label according to requirements"""
@@ -303,180 +99,83 @@ class ProfessionalGamingChartGenerator:
             return f"{hours} h {remaining_minutes} m"
     
     def create_professional_chart(self, game_title, game_settings, game_mode, smartphone_name,
-                                fps_color, cpu_color, show_raw_data=False):
-        """Create professional gaming chart like mobile gaming monitoring apps"""
+                                fps_color, cpu_color):
+        """Create professional gaming chart"""
         
-        # Use processed data if available, otherwise original
-        data_to_use = self.processed_data if self.processed_data is not None else self.original_data
-        
-        # Check if data is valid
-        if data_to_use is None or len(data_to_use) == 0:
-            st.error("❌ No data available to create chart")
+        if self.processed_data is None:
+            st.error("❌ No data available")
             return None
         
-        # Debug info
-        st.info(f"🔍 Chart data source: {len(data_to_use)} rows")
-        
-        # Create figure with high resolution
-        fig, ax1 = plt.subplots(figsize=(19.2, 10.8))
-        fig.patch.set_facecolor('#1e1e1e')  # Dark background like gaming apps
-        
-        # Setup primary axis (FPS)
-        ax1.set_xlabel('Time', fontsize=14, fontweight='bold', color='white')
-        ax1.set_ylabel('FPS', color=fps_color, fontsize=14, fontweight='bold')
-        ax1.tick_params(axis='y', labelcolor=fps_color, labelsize=12, colors='white')
-        ax1.tick_params(axis='x', labelcolor='white', labelsize=12, colors='white')
-        
-        # Setup secondary axis (CPU)
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('CPU Usage (%)', color=cpu_color, fontsize=14, fontweight='bold')
-        ax2.tick_params(axis='y', labelcolor=cpu_color, labelsize=12, colors='white')
-        ax2.set_ylim(0, 100)
-        
-        # Get data and check validity
-        try:
-            time_data = data_to_use['TimeMinutes']
-            
-            # More robust data extraction
-            if 'FPS' in data_to_use.columns:
-                fps_raw = data_to_use['FPS']
-                fps_data = pd.Series(fps_raw).dropna()
-            else:
-                st.error("❌ FPS column missing in processed data")
-                return None
-                
-            if 'CPU(%)' in data_to_use.columns:
-                cpu_raw = data_to_use['CPU(%)']
-                cpu_data = pd.Series(cpu_raw).dropna()
-            else:
-                st.error("❌ CPU(%) column missing in processed data")
-                return None
-            
-            # Debug data info
-            st.info(f"🔢 Chart FPS data: {len(fps_data)} valid points")
-            st.info(f"🔢 Chart CPU data: {len(cpu_data)} valid points")
-            
-            # Check if data arrays are not empty
-            if len(fps_data) == 0:
-                st.error("❌ FPS data is empty after filtering")
-                return None
-                
-            if len(cpu_data) == 0:
-                st.error("❌ CPU data is empty after filtering")
-                return None
-                
-            # Ensure time data matches
-            min_length = min(len(time_data), len(fps_data), len(cpu_data))
-            if min_length == 0:
-                st.error("❌ No matching data points for chart")
-                return None
-                
-            # Trim data to same length
-            time_data = time_data[:min_length]
-            fps_data = fps_data[:min_length]
-            cpu_data = cpu_data[:min_length]
-            
-            st.success(f"✅ Chart ready with {min_length} data points")
-                
-        except KeyError as e:
-            st.error(f"❌ Missing required column: {e}")
-            return None
-        except Exception as e:
-            st.error(f"❌ Data processing error: {e}")
-            return None
-        
-        # Convert time to seconds for formatting
+        # Get data
+        time_data = self.processed_data['TimeMinutes']
+        fps_data = self.processed_data['FPS']
+        cpu_data = self.processed_data['CPU(%)']
         time_seconds = time_data * 60
         
-        # Plot raw data (if requested) - very faded
-        if show_raw_data and 'FPS_Raw' in self.original_data:
-            try:
-                raw_time = self.original_data['TimeMinutes'][:len(time_data)] * 60
-                raw_fps = self.original_data['FPS_Raw'][:len(time_data)]
-                raw_cpu = self.original_data['CPU_Raw'][:len(time_data)]
-                
-                ax1.plot(raw_time, raw_fps, color=fps_color, linewidth=0.5, 
-                        alpha=0.15, zorder=1, label='FPS (Raw)')
-                ax2.plot(raw_time, raw_cpu, color=cpu_color, linewidth=0.5,
-                        alpha=0.15, zorder=1, label='CPU (Raw)')
-            except Exception as e:
-                st.warning(f"⚠️ Could not plot raw data: {e}")
+        # Create figure
+        fig, ax1 = plt.subplots(figsize=(16, 9))
+        fig.patch.set_facecolor('#1e1e1e')
         
-        # Plot main smoothed data - prominent and clean
-        ax1.plot(time_seconds, fps_data, color=fps_color, linewidth=3.0,
-                alpha=0.9, zorder=4, label='FPS', solid_capstyle='round')
-        ax2.plot(time_seconds, cpu_data, color=cpu_color, linewidth=3.0,
-                alpha=0.9, zorder=3, label='CPU', solid_capstyle='round')
+        # Primary axis (FPS)
+        ax1.set_xlabel('Time', fontsize=14, fontweight='bold', color='white')
+        ax1.set_ylabel('FPS', color=fps_color, fontsize=14, fontweight='bold')
+        ax1.tick_params(axis='y', labelcolor=fps_color, labelsize=12)
+        ax1.tick_params(axis='x', labelcolor='white', labelsize=12)
         
-        # Add fill areas for better visual appeal (like gaming apps)
-        ax1.fill_between(time_seconds, 0, fps_data, color=fps_color, alpha=0.1, zorder=2)
-        ax2.fill_between(time_seconds, 0, cpu_data, color=cpu_color, alpha=0.1, zorder=1)
+        # Secondary axis (CPU)
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('CPU Usage (%)', color=cpu_color, fontsize=14, fontweight='bold')
+        ax2.tick_params(axis='y', labelcolor=cpu_color, labelsize=12)
+        ax2.set_ylim(0, 100)
         
-        # Set FPS axis limits based on new logic
-        max_fps = max(fps_data) if len(fps_data) > 0 else 30
+        # Plot data
+        ax1.plot(time_seconds, fps_data, color=fps_color, linewidth=2.5, alpha=0.9, label='FPS')
+        ax2.plot(time_seconds, cpu_data, color=cpu_color, linewidth=2.5, alpha=0.9, label='CPU')
+        
+        # Fill areas
+        ax1.fill_between(time_seconds, 0, fps_data, color=fps_color, alpha=0.15)
+        ax2.fill_between(time_seconds, 0, cpu_data, color=cpu_color, alpha=0.15)
+        
+        # Set FPS axis limits
+        max_fps = fps_data.max()
         fps_axis_max = self.get_fps_axis_max(max_fps)
         ax1.set_ylim(0, fps_axis_max)
         
-        # Custom time formatting for x-axis with maximum 6 ticks
-        max_time_seconds = max(time_seconds) if len(time_seconds) > 0 else 60
-        
-        # Prevent division by zero
-        if max_time_seconds <= 0:
-            max_time_seconds = 60
-        
-        # Create approximately 6 ticks
+        # Time formatting
+        max_time_seconds = time_seconds.max()
         num_ticks = 6
         tick_interval = max_time_seconds / (num_ticks - 1)
         tick_positions = [i * tick_interval for i in range(num_ticks)]
-        
-        # Format tick labels
         tick_labels = [self.format_time_label(pos) for pos in tick_positions]
         
-        # Set custom ticks
         ax1.set_xticks(tick_positions)
         ax1.set_xticklabels(tick_labels)
-        
-        # Set x-axis limits
         ax1.set_xlim(0, max_time_seconds)
         
-        # Professional title styling
+        # Title and styling
         title_text = f"{game_title}\n{game_settings}\n{game_mode}"
-        plt.suptitle(title_text, fontsize=20, fontweight='bold', y=0.95, color='white')
+        plt.suptitle(title_text, fontsize=18, fontweight='bold', y=0.95, color='white')
         
-        # Professional grid styling
-        ax1.grid(True, alpha=0.2, linestyle='-', color='white', linewidth=0.5)
+        # Grid and background
+        ax1.grid(True, alpha=0.3, color='white', linewidth=0.5)
         ax1.set_facecolor('#1e1e1e')
         
-        # Professional legend
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
+        # Legend
+        legend_elements = [
+            plt.Line2D([0], [0], color='white', linewidth=0, marker='s', 
+                      markersize=8, markerfacecolor='none', markeredgecolor='white', 
+                      label=smartphone_name),
+            plt.Line2D([0], [0], color=fps_color, linewidth=3, label='FPS'),
+            plt.Line2D([0], [0], color=cpu_color, linewidth=3, label='CPU')
+        ]
         
-        if lines1 or lines2:
-            # Create custom legend
-            legend_elements = []
-            
-            # Add device name
-            legend_elements.append(plt.Line2D([0], [0], color='white', linewidth=0, 
-                                            marker='s', markersize=8, markerfacecolor='none', 
-                                            markeredgecolor='white', label=smartphone_name))
-            
-            # Add FPS line
-            legend_elements.append(plt.Line2D([0], [0], color=fps_color, linewidth=3, label='FPS'))
-            
-            # Add CPU line  
-            legend_elements.append(plt.Line2D([0], [0], color=cpu_color, linewidth=3, label='CPU'))
-            
-            legend = ax1.legend(handles=legend_elements, loc='upper right', 
-                              framealpha=0.9, fancybox=True, shadow=True,
-                              facecolor='#2d2d2d', edgecolor='white', fontsize=11)
-            
-            # Style legend text
-            for text in legend.get_texts():
-                text.set_color('white')
-                if smartphone_name in text.get_text():
-                    text.set_fontweight('bold')
+        legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                          framealpha=0.9, facecolor='#2d2d2d', edgecolor='white')
         
-        # Remove spines for clean look
+        for text in legend.get_texts():
+            text.set_color('white')
+        
+        # Clean spines
         for spine in ax1.spines.values():
             spine.set_color('white')
             spine.set_linewidth(0.5)
@@ -484,7 +183,7 @@ class ProfessionalGamingChartGenerator:
             spine.set_color('white')
             spine.set_linewidth(0.5)
         
-        # Adjust layout
+        # Layout
         plt.tight_layout()
         plt.subplots_adjust(top=0.88)
         
@@ -492,31 +191,12 @@ class ProfessionalGamingChartGenerator:
     
     def get_statistics(self):
         """Get performance statistics"""
-        if self.original_data is None:
+        if self.processed_data is None:
             return {}
         
-        # Use processed data if available
-        data_to_use = self.processed_data if self.processed_data is not None else self.original_data
-        
-        fps_data = data_to_use['FPS'].dropna()
-        cpu_data = data_to_use['CPU(%)'].dropna()
-        
-        # Check if data is empty
-        if len(fps_data) == 0 or len(cpu_data) == 0:
-            return {
-                'grade': "❌ No Data",
-                'duration': 0.0,
-                'avg_fps': 0.0,
-                'min_fps': 0.0,
-                'max_fps': 0.0,
-                'avg_cpu': 0.0,
-                'max_cpu': 0.0,
-                'fps_above_60': 0.0,
-                'frame_drops': 0,
-                'removed_frames': 0
-            }
-        
-        duration = len(data_to_use) / 60
+        fps_data = self.processed_data['FPS']
+        cpu_data = self.processed_data['CPU(%)']
+        duration = len(self.processed_data) / 60
         
         # Performance grading
         avg_fps = fps_data.mean()
@@ -529,10 +209,7 @@ class ProfessionalGamingChartGenerator:
         else:
             grade = "❌ Poor (<30 FPS)"
         
-        # Safe calculation for fps_above_60
-        fps_above_60_pct = 0.0
-        if len(fps_data) > 0:
-            fps_above_60_pct = (len(fps_data[fps_data >= 60]) / len(fps_data)) * 100
+        fps_above_60_pct = (len(fps_data[fps_data >= 60]) / len(fps_data)) * 100
         
         return {
             'grade': grade,
@@ -543,39 +220,8 @@ class ProfessionalGamingChartGenerator:
             'avg_cpu': round(cpu_data.mean(), 1),
             'max_cpu': round(cpu_data.max(), 1),
             'fps_above_60': round(fps_above_60_pct, 1),
-            'frame_drops': len(fps_data[fps_data < 30]),
-            'removed_frames': len(self.removed_indices) if hasattr(self, 'removed_indices') else 0
+            'frame_drops': len(fps_data[fps_data < 30])
         }
-    
-    def generate_processed_csv(self, game_title):
-        """Generate CSV with processed data"""
-        data_to_use = self.processed_data if self.processed_data is not None else self.original_data
-        
-        if data_to_use is None:
-            return None
-        
-        # Create clean DataFrame for export
-        export_data = pd.DataFrame({
-            'Time_Minutes': data_to_use['TimeMinutes'],
-            'FPS': data_to_use['FPS'],
-            'CPU_Percent': data_to_use['CPU(%)']
-        })
-        
-        # Round values
-        export_data['Time_Minutes'] = export_data['Time_Minutes'].round(3)
-        export_data['FPS'] = export_data['FPS'].round(1)
-        export_data['CPU_Percent'] = export_data['CPU_Percent'].round(1)
-        
-        # Convert to CSV
-        csv_buffer = io.StringIO()
-        export_data.to_csv(csv_buffer, index=False)
-        csv_content = csv_buffer.getvalue()
-        
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{game_title.replace(' ', '_')}_professional_data_{timestamp}.csv"
-        
-        return csv_content, filename
 
 def main():
     # Header
@@ -585,83 +231,51 @@ def main():
     # Initialize
     generator = ProfessionalGamingChartGenerator()
     
-    # Sidebar configuration
+    # Sidebar
     with st.sidebar:
         st.header("🎮 Game Configuration")
         game_title = st.text_input("Game Title", value="MOBILE LEGENDS BANG BANG")
         game_settings = st.text_input("Graphics Settings", value="ULTRA - 60 FPS")
         game_mode = st.text_input("Performance Mode", value="BOOST MODE")
-        smartphone_name = st.text_input("Smartphone Model", value="iPhone 15 Pro Max")
+        smartphone_name = st.text_input("Smartphone Model", value="Gaming Phone")
         
         st.header("🎨 Chart Colors")
-        fps_color = st.color_picker("FPS Color", "#4A90E2")  # Blue
-        cpu_color = st.color_picker("CPU Color", "#FF6600")   # Orange
-        
-        st.header("📊 Chart Options")
-        show_raw_data = st.checkbox("Show Raw Data Background", value=False,
-                                   help="Show original noisy data as faded background")
-        
-        st.header("🔧 Additional Processing")
-        enable_outlier_removal = st.toggle("🚫 Remove Outlier Frames", value=False,
-                                          help="Remove extreme outlier frames")
-        
-        if enable_outlier_removal:
-            outlier_sensitivity = st.select_slider(
-                "Outlier Sensitivity",
-                options=['conservative', 'moderate', 'aggressive'],
-                value='moderate'
-            )
-        else:
-            outlier_sensitivity = 'moderate'
+        fps_color = st.color_picker("FPS Color", "#4A90E2")
+        cpu_color = st.color_picker("CPU Color", "#FF6600")
     
     # File upload
     st.header("📁 Upload Gaming Log CSV")
     uploaded_file = st.file_uploader("Drop your CSV file here", type=['csv'])
     
     if uploaded_file:
-        # Load and process data
+        # Load data
         if generator.load_csv_data(uploaded_file):
             
-            # Apply additional processing
-            with st.spinner('🔧 Applying professional processing...'):
-                if generator.apply_additional_processing(enable_outlier_removal, outlier_sensitivity):
-                    st.success("✅ Professional processing completed!")
-                else:
-                    st.warning("⚠️ Using default processing")
-            
-            # Show quick stats
-            data_to_display = generator.processed_data if generator.processed_data is not None else generator.original_data
-            
+            # Show stats
+            data = generator.processed_data
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("📊 Data Points", f"{len(data_to_display):,}")
+                st.metric("📊 Data Points", f"{len(data):,}")
             with col2:
-                st.metric("⏱️ Duration", f"{len(data_to_display)/60:.1f} min")
+                st.metric("⏱️ Duration", f"{len(data)/60:.1f} min")
             with col3:
-                st.metric("🎯 Avg FPS", f"{data_to_display['FPS'].mean():.1f}")
+                st.metric("🎯 Avg FPS", f"{data['FPS'].mean():.1f}")
             with col4:
-                st.metric("🖥️ Avg CPU", f"{data_to_display['CPU(%)'].mean():.1f}%")
+                st.metric("🖥️ Avg CPU", f"{data['CPU(%)'].mean():.1f}%")
             
-            # Generate professional chart
+            # Create chart
             st.header("📊 Professional Gaming Performance Chart")
             
-            with st.spinner('🎨 Creating professional chart...'):
-                chart_fig = generator.create_professional_chart(
-                    game_title, game_settings, game_mode, smartphone_name,
-                    fps_color, cpu_color, show_raw_data
-                )
+            chart_fig = generator.create_professional_chart(
+                game_title, game_settings, game_mode, smartphone_name,
+                fps_color, cpu_color
+            )
+            
+            if chart_fig:
+                st.pyplot(chart_fig, use_container_width=True)
                 
-                if chart_fig is not None:
-                    st.pyplot(chart_fig, use_container_width=True)
-                else:
-                    st.error("❌ Failed to create chart due to invalid data")
-                    st.stop()
-            
-            # Performance statistics
-            stats = generator.get_statistics()
-            
-            # Only show stats if we have valid data
-            if stats and stats.get('grade') != "❌ No Data":
+                # Statistics
+                stats = generator.get_statistics()
                 st.header("📈 Performance Analysis")
                 
                 col1, col2, col3, col4 = st.columns(4)
@@ -673,88 +287,37 @@ def main():
                     st.metric("60+ FPS Time", f"{stats['fps_above_60']}%")
                 with col4:
                     st.metric("Frame Drops", stats['frame_drops'])
-            else:
-                st.error("❌ Cannot generate statistics: Invalid or empty data")
-                st.stop()
-            
-            # Export section
-            st.header("💾 Export Results")
-            
-            col1, col2 = st.columns(2)
-            
-            # PNG Export
-            with col1:
-                st.subheader("📸 Chart Export")
-                if chart_fig is not None:
-                    img_buffer = io.BytesIO()
-                    chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
-                                     facecolor='#1e1e1e', edgecolor='none')
-                    img_buffer.seek(0)
-                    
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    png_filename = f"{game_title.replace(' ', '_')}_professional_chart_{timestamp}.png"
-                    
-                    st.download_button(
-                        label="📸 Download Professional Chart",
-                        data=img_buffer.getvalue(),
-                        file_name=png_filename,
-                        mime="image/png",
-                        use_container_width=True
-                    )
-                else:
-                    st.error("❌ Chart not available for download")
-            
-            # CSV Export
-            with col2:
-                st.subheader("📄 Data Export")
-                result = generator.generate_processed_csv(game_title)
                 
-                if result is not None:
-                    csv_content, csv_filename = result
-                    
-                    st.download_button(
-                        label="📄 Download Processed Data",
-                        data=csv_content,
-                        file_name=csv_filename,
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                    
-                    # Show preview
-                    with st.expander("👀 Preview Export Data"):
-                        preview_df = pd.read_csv(io.StringIO(csv_content))
-                        st.dataframe(preview_df.head(10))
-                        st.info(f"📊 Export contains {len(preview_df)} rows")
-                else:
-                    st.error("❌ No data available for CSV export")
+                # Export
+                st.header("💾 Export Chart")
+                
+                img_buffer = io.BytesIO()
+                chart_fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight',
+                                 facecolor='#1e1e1e', edgecolor='none')
+                img_buffer.seek(0)
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{game_title.replace(' ', '_')}_chart_{timestamp}.png"
+                
+                st.download_button(
+                    label="📸 Download Professional Chart",
+                    data=img_buffer.getvalue(),
+                    file_name=filename,
+                    mime="image/png"
+                )
+            else:
+                st.error("❌ Failed to create chart")
     
     else:
-        # Help section
-        st.info("📤 Upload your gaming log CSV to create professional charts!")
+        st.info("📤 Upload your Mobile Legends Bang Bang CSV file to create professional charts!")
         
-        with st.expander("📋 Required CSV Format"):
+        with st.expander("📋 CSV Requirements"):
             st.markdown("""
-            **Requirements:**
-            - Column labeled exactly: **FPS**
-            - Column labeled exactly: **CPU(%)**
+            **Required columns:**
+            - **FPS** - Frame rate data
+            - **CPU(%)** - CPU usage percentage
             
-            **Features:**
-            - 🎯 **Auto-smoothing** for professional appearance
-            - 🎨 **Gaming app styling** with dark theme
-            - 📊 **Fill areas** and professional gradients
-            - 🔧 **Intelligent processing** based on data characteristics
-            """)
-        
-        with st.expander("✨ Professional Features"):
-            st.markdown("""
-            **This tool creates charts that look like professional gaming monitoring apps:**
-            - **Intelligent smoothing** removes noise automatically
-            - **Professional styling** with dark theme and gradients
-            - **Mobile gaming app appearance** similar to gaming monitors
-            - **High-quality exports** ready for presentations
-            - **Automatic optimization** based on data characteristics
-            - **Smart FPS axis scaling** (30/60/90/120/144 FPS)
-            - **Custom time formatting** with optimal tick spacing
+            **Your Mobile Legends Bang Bang CSV is already compatible!** ✅
             """)
 
 if __name__ == "__main__":
