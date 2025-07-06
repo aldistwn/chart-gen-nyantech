@@ -689,9 +689,9 @@ def main():
                         else:
                             st.error("❌ Export blocked due to data validation issues")
     
-            else:
+                else:
             # Help section
-                st.info("📤 Upload your gaming log CSV to get started!")
+                    st.info("📤 Upload your gaming log CSV to get started!")
         
         with st.expander("📋 Required CSV Format"):
             st.markdown("""
