@@ -223,6 +223,9 @@ class FinalOptimizedGamingChartGenerator:
                         window_length=fps_window,
                         polyorder=min(fps_poly, fps_window-1)
                     )
+
+                    # 🧯 Prevent overshoot
+                    smoothed_fps = np.clip(smoothed_fps, before_fps.min(), before_fps.max())
                     
                     self.processed_data['FPS_Smooth'] = smoothed_fps
                     
