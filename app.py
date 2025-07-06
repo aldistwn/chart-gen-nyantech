@@ -325,11 +325,28 @@ class FinalOptimizedGamingChartGenerator:
             fps_data = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
             cpu_data = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
             
-            # Main lines with labels
-            ax1.plot(time_data, fps_data, color=fps_color, linewidth=2.5,
-                    label='FPS', alpha=0.9, zorder=4)
-            ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=2,
-                    label='CPU', alpha=0.7, zorder=3)
+            # 💨 Plot CPU dulu (di bawah)
+            if not hide_cpu:
+                ax2.plot(
+                    time_data, cpu_data,
+                    color=cpu_color,
+                    linewidth=2.5,
+                    label='CPU',
+                    alpha=0.5,  # Transparan 80%
+                    zorder=2
+                )
+    
+            # 🚀 Plot FPS di atas
+            if not hide_fps:
+                ax1.plot(
+                    time_data, fps_data,
+                    color=fps_color,
+                    linewidth=2.5,
+                    label='FPS',
+                    alpha=0.9,
+                    zorder=3
+                )
+            
         elif show_original:
             # Fallback to original data
             ax1.plot(self.original_data['TimeMinutes'], self.original_data['FPS'],
