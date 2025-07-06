@@ -286,7 +286,7 @@ class FinalOptimizedGamingChartGenerator:
             return False
     
     def create_optimized_chart(self, game_title, game_settings, game_mode, smartphone_name,
-                             fps_color, cpu_color, show_original=True, show_processed=True):
+                             fps_color, cpu_color, show_original=True, show_processed=True, hide_fps=False, hide_cpu=False):
         """Create chart with consistent data"""
         
         # Create figure
@@ -328,8 +328,8 @@ class FinalOptimizedGamingChartGenerator:
             # Main lines with labels
             ax1.plot(time_data, fps_data, color=fps_color, linewidth=2.5,
                     label='FPS', alpha=0.9, zorder=4)
-            ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=2.5,
-                    label='CPU', alpha=0.9, zorder=3)
+            ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=2,
+                    label='CPU', alpha=0.7, zorder=3)
         elif show_original:
             # Fallback to original data
             ax1.plot(self.original_data['TimeMinutes'], self.original_data['FPS'],
@@ -512,6 +512,10 @@ def main():
         st.header("🎨 Chart Colors")
         fps_color = st.color_picker("FPS Color", "#4A90E2")  # Blue default
         cpu_color = st.color_picker("CPU Color", "#FF6600")   # Orange default
+
+        st.header("📊 Chart Layer Visibility")
+        hide_fps = st.checkbox("❌ Hide FPS Line", value=False)
+        hide_cpu = st.checkbox("❌ Hide CPU Line", value=False)
         
         st.header("📊 Display Options")
         show_original = st.checkbox("Show Original Data", value=False,
@@ -593,7 +597,8 @@ def main():
                 with st.spinner('🎨 Creating chart...'):
                     chart_fig = generator.create_optimized_chart(
                         game_title, game_settings, game_mode, smartphone_name,
-                        fps_color, cpu_color, show_original, show_processed
+                        fps_color, cpu_color, show_original, show_processed, hide_fps=hide_fps,
+                        hide_cpu=hide_cpu
                     )
                     st.pyplot(chart_fig)
             
