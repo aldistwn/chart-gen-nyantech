@@ -470,7 +470,8 @@ class FinalOptimizedGamingChartGenerator:
             high_indices = export_fps[export_fps > 70].index
             st.write("**High value locations:**")
             for idx in high_indices[:5]:  # Show first 5
-                st.write(f"  Index {idx}: FPS={export_fps.iloc[idx]:.1f}, CPU={export_cpu.iloc[idx]:.1f}")
+               st.write(f"  Index {idx}: FPS={export_fps.loc[idx]:.1f}, CPU={export_cpu.loc[idx]:.1f}")
+
             
             # Block export if values are impossible
             if export_fps_max > 80:
@@ -495,7 +496,9 @@ class FinalOptimizedGamingChartGenerator:
         # Final validation after rounding
         final_fps_max = export_data['FPS'].max()
         st.write(f"**After rounding - Final FPS max: {final_fps_max}**")
-        
+
+        export_data.reset_index(drop=True, inplace=True)
+
         # Convert to CSV
         csv_buffer = io.StringIO()
         export_data.to_csv(csv_buffer, index=False)
