@@ -463,8 +463,8 @@ def main():
     # Sidebar configuration
     with st.sidebar:
         st.header("🎮 Game Configuration")
-        game_title = st.text_input("Game Title", value="MOBILE LEGENDS")
-        game_settings = st.text_input("Graphics Settings", value="ULTRA - 120 FPS")
+        game_title = st.text_input("Game Title", value="MOBILE LEGENDS BANG BANG")
+        game_settings = st.text_input("Graphics Settings", value="ULTRA - 60 FPS")
         game_mode = st.text_input("Performance Mode", value="BOOST MODE")
         smartphone_name = st.text_input("Smartphone Model", value="iPhone 15 Pro Max")
         
