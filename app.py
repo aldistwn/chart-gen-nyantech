@@ -40,8 +40,6 @@ class FinalOptimizedGamingChartGenerator:
                 st.error("❌ Cannot parse CSV file. Please check format.")
                 return False
             
-            # 🚨 EMERGENCY DEBUG - DETAILED COLUMN ANALYSIS
-            st.markdown("### 🚨 EMERGENCY DEBUG - RAW CSV ANALYSIS")
             columns = list(self.original_data.columns)
             
             st.write("**All columns found:**")
@@ -177,13 +175,10 @@ class FinalOptimizedGamingChartGenerator:
                         enable_outlier_removal=False, outlier_sensitivity='moderate'):
         """Processing pipeline with EMERGENCY debugging"""
         
-        # 🚨 EMERGENCY DEBUG - PROCESSING PHASE
-        st.markdown("### 🚨 EMERGENCY DEBUG - PROCESSING PHASE")
-        
+
         input_fps_max = self.original_data['FPS'].max()
         input_fps_min = self.original_data['FPS'].min()
-        st.write(f"**Input to processing - FPS range: {input_fps_min} - {input_fps_max}**")
-        
+               
         # Initialize with original data
         if enable_outlier_removal:
             st.write("⚠️ **OUTLIER REMOVAL ENABLED - DEBUGGING...**")
@@ -266,11 +261,9 @@ class FinalOptimizedGamingChartGenerator:
                 self.processed_data['CPU_Smooth'] = self.processed_data['CPU(%)'].copy()
             
             # Final validation
-            st.markdown("### 🚨 FINAL PROCESSING VALIDATION")
             if 'FPS_Smooth' in self.processed_data:
                 final_fps_max = self.processed_data['FPS_Smooth'].max()
                 final_fps_min = self.processed_data['FPS_Smooth'].min()
-                st.write(f"**Final FPS_Smooth range: {final_fps_min:.1f} - {final_fps_max:.1f}**")
                 
                 if final_fps_max > input_fps_max + 0.1:
                     st.error(f"🚨 **PROCESSING BUG DETECTED!**")
@@ -455,9 +448,7 @@ class FinalOptimizedGamingChartGenerator:
         if self.processed_data is None:
             return None
         
-        # 🚨 EMERGENCY DEBUG - EXPORT PHASE
-        st.markdown("### 🚨 EMERGENCY DEBUG - EXPORT PHASE")
-        
+              
         # Check what we're about to export
         export_fps = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
         export_cpu = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU(%)']
@@ -523,8 +514,7 @@ class FinalOptimizedGamingChartGenerator:
 def main():
     # Header
     st.title("🎮 Final Gaming Chart Generator with DEBUG")
-    st.markdown("Transform gaming logs with **EMERGENCY debugging enabled**")
-    
+       
     # Initialize
     generator = FinalOptimizedGamingChartGenerator()
     
