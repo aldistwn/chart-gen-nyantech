@@ -149,7 +149,7 @@ class GamingPerformanceAnalyzer:
         return True
     
     def apply_smoothing(self, fps_smooth=False, cpu_smooth=False, fps_window=7, cpu_window=7):
-        """Apply Savitzky-Golay smoothing"""
+        """Apply Savitzky-Golay smoothing - when disabled, use pure original data"""
         if self.processed_data is None:
             self.processed_data = self.original_data.copy()
         
@@ -172,10 +172,13 @@ class GamingPerformanceAnalyzer:
                 self.processed_data['FPS_Smooth'] = np.clip(smoothed_fps, original_min, original_max)
                 st.success(f"✅ FPS smoothed (window: {window})")
             except:
-                self.processed_data['FPS_Smooth'] = self.processed_data['FPS']
+                self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
                 st.warning("⚠️ FPS smoothing failed, using original data")
         else:
-            self.processed_data['FPS_Smooth'] = self.processed_data['FPS']
+            # When smoothing is OFF, use pure original data (no processing)
+            self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
+            if not fps_smooth:
+                st.info("📊 FPS smoothing disabled - using raw CSV data")
         
         # CPU Smoothing
         if cpu_smooth and data_length >= 5:
@@ -192,10 +195,13 @@ class GamingPerformanceAnalyzer:
                 self.processed_data['CPU_Smooth'] = np.clip(smoothed_cpu, 0, 100)
                 st.success(f"✅ CPU smoothed (window: {window})")
             except:
-                self.processed_data['CPU_Smooth'] = self.processed_data['CPU']
+                self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
                 st.warning("⚠️ CPU smoothing failed, using original data")
         else:
-            self.processed_data['CPU_Smooth'] = self.processed_data['CPU']
+            # When smoothing is OFF, use pure original data (no processing)
+            self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
+            if not cpu_smooth:
+                st.info("📊 CPU smoothing disabled - using raw CSV data")
         
         return True
     
@@ -441,12 +447,14 @@ def main():
         with col1:
             fps_smooth = st.toggle("🎯 FPS Smoothing", value=False)
             if fps_smooth:
-                fps_window = st.slider("FPS Window", 5, 21, 7, step=2)
+                fps_window = st.slider("FPS Window", 3, 51, 7, step=2, 
+                                     help="Larger window = smoother line")
         
         with col2:
             cpu_smooth = st.toggle("🖥️ CPU Smoothing", value=False)
             if cpu_smooth:
-                cpu_window = st.slider("CPU Window", 5, 21, 7, step=2)
+                cpu_window = st.slider("CPU Window", 3, 51, 7, step=2,
+                                     help="Larger window = smoother line")
     
     # Main content
     col1, col2 = st.columns([2, 1])
@@ -476,8 +484,13 @@ def main():
                     fps_window = fps_window if fps_smooth else 7
                     cpu_window = cpu_window if cpu_smooth else 7
                     
-                    with st.spinner('🔧 Processing data...'):
-                        analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                    # Show processing status
+                    if fps_smooth or cpu_smooth:
+                        with st.spinner('🔧 Applying smoothing filters...'):
+                            analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                    else:
+                        with st.spinner('📊 Using raw CSV data...'):
+                            analyzer.apply_smoothing(False, False, fps_window, cpu_window)
                     
                     # Create chart
                     st.subheader("📊 Performance Chart")
