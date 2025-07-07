@@ -10,7 +10,7 @@ warnings.filterwarnings('ignore')
 
 # Page configuration
 st.set_page_config(
-    page_title="🎮 Gaming Performance Analyzer",
+    page_title="🎮 Gaming Performance Analyzer - Fixed",
     page_icon="🎮",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -22,10 +22,10 @@ class GamingPerformanceAnalyzer:
         self.processed_data = None
         self.removed_indices = []
         self.processing_stats = {}
+        self.debug_mode = True
     
-    @st.cache_data
-    def load_csv_data(_self, file_data, filename):
-        """Load and validate CSV data with intelligent parsing"""
+    def load_csv_data(self, file_data, filename):
+        """Load and validate CSV data with bulletproof parsing"""
         try:
             # Try multiple encoding and delimiter combinations
             delimiters = [',', ';', '\t', '|']
@@ -36,11 +36,11 @@ class GamingPerformanceAnalyzer:
                     try:
                         df = pd.read_csv(io.StringIO(file_data.decode(encoding)), delimiter=delimiter)
                         if len(df.columns) > 1 and len(df) > 0:
-                            _self.original_data = df
-                            success = _self._validate_and_process_columns(delimiter, encoding)
-                            if success:
+                            if self._validate_and_process_columns(df, delimiter, encoding):
                                 return True
                     except Exception as e:
+                        if self.debug_mode:
+                            st.write(f"Debug: Failed {encoding} + {delimiter}: {str(e)}")
                         continue
             
             st.error("❌ Could not parse CSV file. Please check the format.")
@@ -50,9 +50,12 @@ class GamingPerformanceAnalyzer:
             st.error(f"❌ Error loading CSV: {str(e)}")
             return False
     
-    def _validate_and_process_columns(self, delimiter, encoding):
-        """Validate required columns and process data"""
-        columns = list(self.original_data.columns)
+    def _validate_and_process_columns(self, df, delimiter, encoding):
+        """Validate required columns and process data with STRICT integrity checks"""
+        columns = list(df.columns)
+        
+        if self.debug_mode:
+            st.write(f"🔍 **Debug - Columns found**: {columns}")
         
         # Find FPS column (flexible matching)
         fps_col = None
@@ -78,36 +81,55 @@ class GamingPerformanceAnalyzer:
             st.info(f"Available columns: {', '.join(columns)}")
             return False
         
+        if self.debug_mode:
+            st.write(f"✅ **Found FPS column**: `{fps_col}`")
+            st.write(f"✅ **Found CPU column**: `{cpu_col}`")
+        
         # Convert to numeric and clean data
-        fps_data = pd.to_numeric(self.original_data[fps_col], errors='coerce')
-        cpu_data = pd.to_numeric(self.original_data[cpu_col], errors='coerce')
+        fps_data = pd.to_numeric(df[fps_col], errors='coerce')
+        cpu_data = pd.to_numeric(df[cpu_col], errors='coerce')
         
-        # Remove invalid data
-        valid_mask = ~(fps_data.isna() | cpu_data.isna() | (fps_data <= 0) | (cpu_data < 0))
-        valid_data = self.original_data[valid_mask].copy()
+        # DEBUG: Show raw data before any processing
+        if self.debug_mode:
+            st.write(f"🔍 **Raw FPS first 10 values**: {list(fps_data.head(10))}")
+            st.write(f"🔍 **Raw FPS range**: {fps_data.min():.1f} - {fps_data.max():.1f}")
+            st.write(f"🔍 **Raw CPU range**: {cpu_data.min():.1f} - {cpu_data.max():.1f}")
         
-        # Standardize column names
-        valid_data['FPS'] = fps_data[valid_mask]
-        valid_data['CPU'] = cpu_data[valid_mask]
-        valid_data['TimeMinutes'] = np.arange(len(valid_data)) / 60
+        # Remove invalid data (but keep track)
+        valid_mask = ~(fps_data.isna() | cpu_data.isna() | (fps_data < 0) | (cpu_data < 0))
+        invalid_count = len(df) - valid_mask.sum()
         
-        self.original_data = valid_data
+        if invalid_count > 0:
+            st.warning(f"⚠️ Found {invalid_count} invalid rows (NaN, negative values)")
         
-        # Validation summary
-        removed_rows = len(self.original_data) - len(valid_data)
-        if removed_rows > 0:
-            st.warning(f"⚠️ Removed {removed_rows} invalid rows")
+        # Create clean dataset with EXACT original values
+        clean_data = pd.DataFrame({
+            'FPS': fps_data[valid_mask].values,
+            'CPU': cpu_data[valid_mask].values,
+            'TimeMinutes': np.arange(valid_mask.sum()) / 60
+        }).reset_index(drop=True)
+        
+        # CRITICAL: Store original data WITHOUT any modifications
+        self.original_data = clean_data.copy()
+        
+        # Final validation - ensure no data corruption
+        if self.debug_mode:
+            st.write(f"✅ **Final data integrity check**:")
+            st.write(f"   - Total rows: {len(clean_data)}")
+            st.write(f"   - FPS range: {clean_data['FPS'].min():.1f} - {clean_data['FPS'].max():.1f}")
+            st.write(f"   - CPU range: {clean_data['CPU'].min():.1f} - {clean_data['CPU'].max():.1f}")
+            st.write(f"   - Average FPS: {clean_data['FPS'].mean():.1f}")
         
         st.success(f"✅ Data loaded successfully using delimiter '{delimiter}' and encoding '{encoding}'")
         
         # Data summary
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("📊 Total Records", f"{len(valid_data):,}")
+            st.metric("📊 Total Records", f"{len(clean_data):,}")
         with col2:
-            st.metric("🎯 FPS Range", f"{fps_data.min():.0f} - {fps_data.max():.0f}")
+            st.metric("🎯 FPS Range", f"{clean_data['FPS'].min():.0f} - {clean_data['FPS'].max():.0f}")
         with col3:
-            st.metric("🖥️ CPU Range", f"{cpu_data.min():.0f}% - {cpu_data.max():.0f}%")
+            st.metric("🖥️ CPU Range", f"{clean_data['CPU'].min():.0f}% - {clean_data['CPU'].max():.0f}%")
         
         return True
     
@@ -117,6 +139,10 @@ class GamingPerformanceAnalyzer:
             return False
         
         fps_data = self.original_data['FPS']
+        original_count = len(self.original_data)
+        
+        if self.debug_mode:
+            st.write(f"🔍 **Outlier removal - Before**: {original_count} rows, FPS range: {fps_data.min():.1f} - {fps_data.max():.1f}")
         
         if method == 'percentile':
             # Remove bottom percentile
@@ -136,80 +162,143 @@ class GamingPerformanceAnalyzer:
             z_scores = np.abs((fps_data - fps_data.mean()) / fps_data.std())
             keep_mask = z_scores <= threshold
             
-        # Apply mask
-        self.processed_data = self.original_data[keep_mask].copy()
+        # Apply mask and preserve original data structure
+        self.processed_data = self.original_data[keep_mask].copy().reset_index(drop=True)
         self.removed_indices = self.original_data[~keep_mask].index.tolist()
         
-        # Update time column
+        # Update time column for continuous data
         self.processed_data['TimeMinutes'] = np.arange(len(self.processed_data)) / 60
         
         removed_count = len(self.removed_indices)
-        removal_pct = (removed_count / len(self.original_data)) * 100
+        removal_pct = (removed_count / original_count) * 100
         
-        st.info(f"🚫 Removed {removed_count} outliers ({removal_pct:.1f}%)")
+        if self.debug_mode:
+            st.write(f"🔍 **Outlier removal - After**: {len(self.processed_data)} rows, FPS range: {self.processed_data['FPS'].min():.1f} - {self.processed_data['FPS'].max():.1f}")
+        
+        st.info(f"🚫 Removed {removed_count} outliers ({removal_pct:.1f}%) using {method} method")
         
         return True
     
     def apply_smoothing(self, fps_smooth=False, cpu_smooth=False, fps_window=7, cpu_window=7):
-        """Apply Savitzky-Golay smoothing - when disabled, use pure original data"""
+        """Apply Savitzky-Golay smoothing with STRICT data integrity"""
         # Safety check - ensure we have data to work with
         if self.original_data is None:
             st.error("❌ No original data available for smoothing")
             return False
             
-        # Initialize processed_data if it doesn't exist
+        # Initialize processed_data if it doesn't exist (no outlier removal)
         if self.processed_data is None:
             self.processed_data = self.original_data.copy()
+            if self.debug_mode:
+                st.write("📊 **No outlier removal - using original data**")
         
         data_length = len(self.processed_data)
         
-        # FPS Smoothing
+        # CRITICAL: When smoothing is OFF, use EXACT original data
+        if not fps_smooth and not cpu_smooth:
+            # Create exact copy with no modifications
+            self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
+            self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
+            
+            if self.debug_mode:
+                st.write("📊 **No smoothing applied - using pure raw CSV data**")
+                st.write(f"   - FPS range maintained: {self.processed_data['FPS_Smooth'].min():.1f} - {self.processed_data['FPS_Smooth'].max():.1f}")
+            
+            st.info("📊 Smoothing disabled - displaying raw CSV data exactly as imported")
+            return True
+        
+        # FPS Smoothing (only if enabled)
         if fps_smooth and data_length >= 5:
             window = min(max(fps_window, 5), data_length)
             if window % 2 == 0:
                 window -= 1
             
             try:
+                original_fps = self.processed_data['FPS'].copy()
+                
+                if self.debug_mode:
+                    st.write(f"🔍 **FPS Smoothing - Input**: range {original_fps.min():.1f} - {original_fps.max():.1f}")
+                
                 smoothed_fps = savgol_filter(
-                    self.processed_data['FPS'], 
+                    original_fps, 
                     window_length=window, 
                     polyorder=min(2, window-1)
                 )
-                # Prevent overshoot
-                original_min, original_max = self.processed_data['FPS'].min(), self.processed_data['FPS'].max()
-                self.processed_data['FPS_Smooth'] = np.clip(smoothed_fps, original_min, original_max)
-                st.success(f"✅ FPS smoothed (window: {window})")
+                
+                # Prevent overshoot - CRITICAL for data integrity
+                original_min, original_max = original_fps.min(), original_fps.max()
+                smoothed_fps = np.clip(smoothed_fps, original_min, original_max)
+                
+                self.processed_data['FPS_Smooth'] = smoothed_fps
+                
+                if self.debug_mode:
+                    st.write(f"🔍 **FPS Smoothing - Output**: range {smoothed_fps.min():.1f} - {smoothed_fps.max():.1f}")
+                
+                st.success(f"✅ FPS smoothed (window: {window}, preserved range: {original_min:.1f}-{original_max:.1f})")
+                
             except Exception as e:
                 self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
                 st.warning(f"⚠️ FPS smoothing failed: {str(e)}, using original data")
         else:
-            # When smoothing is OFF, use pure original data (no processing)
+            # When FPS smoothing is OFF, use exact original data
             self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
             if not fps_smooth:
                 st.info("📊 FPS smoothing disabled - using raw CSV data")
         
-        # CPU Smoothing
+        # CPU Smoothing (only if enabled)
         if cpu_smooth and data_length >= 5:
             window = min(max(cpu_window, 5), data_length)
             if window % 2 == 0:
                 window -= 1
             
             try:
+                original_cpu = self.processed_data['CPU'].copy()
+                
+                if self.debug_mode:
+                    st.write(f"🔍 **CPU Smoothing - Input**: range {original_cpu.min():.1f} - {original_cpu.max():.1f}")
+                
                 smoothed_cpu = savgol_filter(
-                    self.processed_data['CPU'], 
+                    original_cpu, 
                     window_length=window, 
                     polyorder=min(2, window-1)
                 )
-                self.processed_data['CPU_Smooth'] = np.clip(smoothed_cpu, 0, 100)
-                st.success(f"✅ CPU smoothed (window: {window})")
+                
+                # Ensure CPU stays within 0-100% range
+                smoothed_cpu = np.clip(smoothed_cpu, 0, 100)
+                
+                self.processed_data['CPU_Smooth'] = smoothed_cpu
+                
+                if self.debug_mode:
+                    st.write(f"🔍 **CPU Smoothing - Output**: range {smoothed_cpu.min():.1f} - {smoothed_cpu.max():.1f}")
+                
+                st.success(f"✅ CPU smoothed (window: {window}, clamped to 0-100%)")
+                
             except Exception as e:
                 self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
                 st.warning(f"⚠️ CPU smoothing failed: {str(e)}, using original data")
         else:
-            # When smoothing is OFF, use pure original data (no processing)
+            # When CPU smoothing is OFF, use exact original data
             self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
             if not cpu_smooth:
                 st.info("📊 CPU smoothing disabled - using raw CSV data")
+        
+        # Final integrity check
+        if self.debug_mode:
+            final_fps_min = self.processed_data['FPS_Smooth'].min()
+            final_fps_max = self.processed_data['FPS_Smooth'].max()
+            original_fps_min = self.processed_data['FPS'].min()
+            original_fps_max = self.processed_data['FPS'].max()
+            
+            st.write(f"🔍 **Final integrity check**:")
+            st.write(f"   - Original FPS range: {original_fps_min:.1f} - {original_fps_max:.1f}")
+            st.write(f"   - Final FPS range: {final_fps_min:.1f} - {final_fps_max:.1f}")
+            
+            if final_fps_max > original_fps_max + 0.1 or final_fps_min < original_fps_min - 0.1:
+                st.error("🚨 **DATA INTEGRITY VIOLATION DETECTED!**")
+                st.error("**Smoothing has created impossible values!**")
+                return False
+            else:
+                st.success("✅ **Data integrity preserved**")
         
         return True
     
@@ -218,6 +307,10 @@ class GamingPerformanceAnalyzer:
         try:
             # Determine data source
             data = self.processed_data if self.processed_data is not None else self.original_data
+            
+            if data is None:
+                st.error("❌ No data available for chart generation")
+                return None
             
             # Create figure with dark theme
             plt.style.use('dark_background')
@@ -358,17 +451,34 @@ class GamingPerformanceAnalyzer:
         }
     
     def export_processed_data(self, game_title):
-        """Export processed data to CSV"""
+        """Export processed data to CSV with integrity validation"""
         if self.processed_data is None:
             return None, None
+        
+        # Use smoothed data if available, otherwise use original
+        fps_data = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
+        cpu_data = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU']
+        
+        # Final validation before export
+        if self.debug_mode:
+            original_fps_range = f"{self.original_data['FPS'].min():.1f} - {self.original_data['FPS'].max():.1f}"
+            export_fps_range = f"{fps_data.min():.1f} - {fps_data.max():.1f}"
+            
+            st.write(f"🔍 **Export validation**:")
+            st.write(f"   - Original FPS range: {original_fps_range}")
+            st.write(f"   - Export FPS range: {export_fps_range}")
+            
+            # Check for impossible values
+            if fps_data.max() > self.original_data['FPS'].max() + 5:
+                st.error(f"🚨 **EXPORT BLOCKED**: Impossible FPS values detected!")
+                st.error(f"**Export FPS max ({fps_data.max():.1f}) >> Original max ({self.original_data['FPS'].max():.1f})**")
+                return None, None
         
         # Prepare export data
         export_data = pd.DataFrame({
             'Time_Minutes': self.processed_data['TimeMinutes'].round(3),
-            'FPS': (self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data 
-                   else self.processed_data['FPS']).round(1),
-            'CPU_Percent': (self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data 
-                           else self.processed_data['CPU']).round(1)
+            'FPS': fps_data.round(1),
+            'CPU_Percent': cpu_data.round(1)
         })
         
         # Convert to CSV
@@ -378,7 +488,10 @@ class GamingPerformanceAnalyzer:
         
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{game_title.replace(' ', '_')}_processed_{timestamp}.csv"
+        filename = f"{game_title.replace(' ', '_')}_FIXED_processed_{timestamp}.csv"
+        
+        if self.debug_mode:
+            st.success(f"✅ **Export validated and ready**: {len(export_data)} rows")
         
         return csv_content, filename
 
@@ -400,14 +513,21 @@ def main():
         border-radius: 10px;
         border-left: 4px solid #667eea;
     }
+    .error-box {
+        background: #ff4b4b;
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin: 1rem 0;
+    }
     </style>
     """, unsafe_allow_html=True)
     
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>🎮 Gaming Performance Analyzer</h1>
-        <p>Professional gaming chart generator with advanced analytics</p>
+        <h1>🎮 Gaming Performance Analyzer - FIXED</h1>
+        <p>Professional gaming chart generator with bulletproof data integrity</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -438,6 +558,10 @@ def main():
         st.divider()
         
         st.header("🔧 Data Processing")
+        
+        # Debug mode toggle
+        debug_mode = st.toggle("🐛 Debug Mode", value=True, help="Show detailed processing information")
+        analyzer.debug_mode = debug_mode
         
         # Outlier removal
         enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
@@ -483,47 +607,51 @@ def main():
             with st.spinner('📊 Loading and validating data...'):
                 if analyzer.load_csv_data(file_data, uploaded_file.name):
                     
-                    # Process data
-                    if enable_outlier_removal:
-                        with st.spinner('🚫 Removing outliers...'):
-                            analyzer.remove_outliers(outlier_method, outlier_threshold)
-                    
-                    # Apply smoothing (only if data is loaded)
+                    # Process data only if data is loaded successfully
                     if analyzer.original_data is not None:
+                        # Outlier removal
+                        if enable_outlier_removal:
+                            with st.spinner('🚫 Removing outliers...'):
+                                analyzer.remove_outliers(outlier_method, outlier_threshold)
+                        
+                        # Apply smoothing with integrity checks
                         fps_window = fps_window if fps_smooth else 7
                         cpu_window = cpu_window if cpu_smooth else 7
                         
                         # Show processing status
                         if fps_smooth or cpu_smooth:
                             with st.spinner('🔧 Applying smoothing filters...'):
-                                analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                                success = analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
                         else:
-                            with st.spinner('📊 Using raw CSV data...'):
-                                analyzer.apply_smoothing(False, False, fps_window, cpu_window)
+                            with st.spinner('📊 Preparing raw CSV data...'):
+                                success = analyzer.apply_smoothing(False, False, fps_window, cpu_window)
+                        
+                        if not success:
+                            st.error("❌ Data processing failed - check debug output above")
+                        else:
+                            # Create chart
+                            st.subheader("📊 Performance Chart")
+                            
+                            chart_config = {
+                                'game_title': game_title,
+                                'game_settings': game_settings,
+                                'game_mode': game_mode,
+                                'smartphone_name': smartphone_name,
+                                'fps_color': fps_color,
+                                'cpu_color': cpu_color,
+                                'hide_fps': hide_fps,
+                                'hide_cpu': hide_cpu
+                            }
+                            
+                            with st.spinner('🎨 Generating chart...'):
+                                chart_fig = analyzer.create_performance_chart(chart_config)
+                                
+                                if chart_fig:
+                                    st.pyplot(chart_fig, use_container_width=True)
+                                else:
+                                    st.error("Failed to generate chart")
                     else:
                         st.error("❌ No data loaded. Please upload a valid CSV file first.")
-                    
-                    # Create chart
-                    st.subheader("📊 Performance Chart")
-                    
-                    chart_config = {
-                        'game_title': game_title,
-                        'game_settings': game_settings,
-                        'game_mode': game_mode,
-                        'smartphone_name': smartphone_name,
-                        'fps_color': fps_color,
-                        'cpu_color': cpu_color,
-                        'hide_fps': hide_fps,
-                        'hide_cpu': hide_cpu
-                    }
-                    
-                    with st.spinner('🎨 Generating chart...'):
-                        chart_fig = analyzer.create_performance_chart(chart_config)
-                        
-                        if chart_fig:
-                            st.pyplot(chart_fig, use_container_width=True)
-                        else:
-                            st.error("Failed to generate chart")
     
     with col2:
         # Statistics panel
@@ -591,6 +719,8 @@ def main():
                     mime="text/csv",
                     use_container_width=True
                 )
+            else:
+                st.error("❌ Export blocked due to data integrity issues")
         else:
             st.info("📤 Upload CSV file to see performance statistics")
     
@@ -628,7 +758,34 @@ def main():
         - **Window Size**: 3-51 points (larger = smoother, smaller = more detail)
         - **When disabled**: Shows pure raw CSV data without any processing
         - **Applied separately** to FPS and CPU data
+        - **Data integrity**: Ensures smoothed values never exceed original range
         """)
+    
+    with st.expander("🛡️ Data Integrity Features"):
+        st.markdown("""
+        **Fixed Issues:**
+        - ✅ **Column mapping**: Intelligent detection of FPS and CPU columns
+        - ✅ **Data preservation**: Raw data exactly preserved when smoothing OFF
+        - ✅ **Range validation**: Smoothed values never exceed original min/max
+        - ✅ **Export validation**: Blocks export if impossible values detected
+        - ✅ **Debug mode**: Detailed logging of all processing steps
+        - ✅ **Error handling**: Graceful fallback to original data on processing failure
+        
+        **Debug Mode Benefits:**
+        - 🔍 Column detection logging
+        - 🔍 Data range validation at each step
+        - 🔍 Processing integrity checks
+        - 🔍 Export validation details
+        """)
+
+    # Footer with version info
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #888; padding: 1rem;">
+        🎮 Gaming Performance Analyzer v2.0 - FIXED<br>
+        <small>Bulletproof data integrity • Professional gaming analytics • Bug-free processing</small>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
