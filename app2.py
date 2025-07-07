@@ -679,6 +679,51 @@ class GamingPerformanceAnalyzer:
                     st.warning(f"📊 **Data point count changed**: {validation_result['fps_differences']['count_diff']:+d} data points")
         
         return validation_status
+    
+    def export_processed_data(self, game_title):
+        """Export processed data to CSV with integrity validation"""
+        if self.processed_data is None:
+            return None, None
+        
+        # Use smoothed data if available, otherwise use original
+        fps_data = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
+        cpu_data = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU']
+        
+        # Final validation before export
+        if self.debug_mode:
+            original_fps_range = f"{self.original_data['FPS'].min():.1f} - {self.original_data['FPS'].max():.1f}"
+            export_fps_range = f"{fps_data.min():.1f} - {fps_data.max():.1f}"
+            
+            st.write(f"🔍 **Export validation**:")
+            st.write(f"   - Original FPS range: {original_fps_range}")
+            st.write(f"   - Export FPS range: {export_fps_range}")
+            
+            # Check for impossible values
+            if fps_data.max() > self.original_data['FPS'].max() + 5:
+                st.error(f"🚨 **EXPORT BLOCKED**: Impossible FPS values detected!")
+                st.error(f"**Export FPS max ({fps_data.max():.1f}) >> Original max ({self.original_data['FPS'].max():.1f})**")
+                return None, None
+        
+        # Prepare export data
+        export_data = pd.DataFrame({
+            'Time_Minutes': self.processed_data['TimeMinutes'].round(3),
+            'FPS': fps_data.round(1),
+            'CPU_Percent': cpu_data.round(1)
+        })
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        export_data.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{game_title.replace(' ', '_')}_FIXED_processed_{timestamp}.csv"
+        
+        if self.debug_mode:
+            st.success(f"✅ **Export validated and ready**: {len(export_data)} rows")
+        
+        return csv_content, filename
         """Export processed data to CSV with integrity validation"""
         if self.processed_data is None:
             return None, None
