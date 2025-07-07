@@ -22,11 +22,20 @@ if uploaded_file:
         for line in raw_lines:
             decoded = line.decode("utf-8").strip()
             split_line = re.split(r'[\s,]+', decoded)
-            row = [int(x) for x in split_line if x.isdigit()]
+            row = []
+            for x in split_line:
+                try:
+                    row.append(int(float(x)))
+                except:
+                    continue
             if row:
                 cleaned_rows.append(row)
 
         df = pd.DataFrame(cleaned_rows)
+
+        st.write(f"File shape: {df.shape}")
+        st.write("Preview data:", df.head())
+
 
         if df.shape[1] >= 5:
             fps = df[0]
