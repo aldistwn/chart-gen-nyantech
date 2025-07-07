@@ -184,36 +184,36 @@ class GamingPerformanceAnalyzer:
             fig, ax1 = plt.subplots(figsize=(16, 9))
             fig.patch.set_facecolor('#0E1117')
             
-            # Configure primary axis (FPS)
+            # Configure primary axis (CPU) - will be in background
             ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-            ax1.set_ylabel('FPS', fontsize=12, color=config['fps_color'], fontweight='bold')
+            ax1.set_ylabel('CPU Usage (%)', fontsize=12, color=config['cpu_color'], fontweight='bold')
             ax1.tick_params(axis='both', colors='white', labelsize=10)
+            ax1.set_ylim(0, 100)
             
-            # Configure secondary axis (CPU)
+            # Configure secondary axis (FPS) - will be in foreground
             ax2 = ax1.twinx()
-            ax2.set_ylabel('CPU Usage (%)', fontsize=12, color=config['cpu_color'], fontweight='bold')
+            ax2.set_ylabel('FPS', fontsize=12, color=config['fps_color'], fontweight='bold')
             ax2.tick_params(axis='y', colors='white', labelsize=10)
-            ax2.set_ylim(0, 100)
             
-            # Plot data
+            # Plot data - CPU first (background), then FPS (foreground)
             time_data = data['TimeMinutes']
-            
-            if not config['hide_fps']:
-                fps_data = data['FPS']
-                line1 = ax1.plot(time_data, fps_data, 
-                               color=config['fps_color'], linewidth=2.5, 
-                               label='FPS', alpha=0.9, zorder=3)
             
             if not config['hide_cpu']:
                 cpu_data = data['CPU']
-                line2 = ax2.plot(time_data, cpu_data, 
+                line1 = ax1.plot(time_data, cpu_data, 
                                color=config['cpu_color'], linewidth=2.0, 
-                               label='CPU Usage', alpha=0.7, zorder=2)
+                               label='CPU Usage', alpha=0.6, zorder=1)
             
-            # Set FPS axis limits
+            if not config['hide_fps']:
+                fps_data = data['FPS']
+                line2 = ax2.plot(time_data, fps_data, 
+                               color=config['fps_color'], linewidth=3.0, 
+                               label='FPS', alpha=0.9, zorder=3)
+            
+            # Set FPS axis limits with padding
             if not config['hide_fps']:
                 fps_max = fps_data.max() * 1.1
-                ax1.set_ylim(0, fps_max)
+                ax2.set_ylim(0, fps_max)
             
             # Chart styling
             ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
@@ -231,24 +231,26 @@ class GamingPerformanceAnalyzer:
                         fontsize=20, fontweight='bold', 
                         color='white', y=0.95)
             
-            # Legend
+            # Legend - FPS first (more prominent)
             if config['smartphone_name']:
                 legend_elements = [plt.Line2D([0], [0], color='none', label=config['smartphone_name'])]
                 
                 if not config['hide_fps']:
                     legend_elements.append(plt.Line2D([0], [0], color=config['fps_color'], 
-                                                    linewidth=2.5, label='FPS'))
+                                                    linewidth=3.0, label='FPS'))
                 if not config['hide_cpu']:
                     legend_elements.append(plt.Line2D([0], [0], color=config['cpu_color'], 
                                                     linewidth=2, label='CPU Usage'))
                 
-                legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                legend = ax2.legend(handles=legend_elements, loc='upper right', 
                                   framealpha=0.9, fancybox=True)
                 legend.get_frame().set_facecolor('#262730')
                 for text in legend.get_texts():
                     text.set_color('white')
                     if text.get_text() == config['smartphone_name']:
                         text.set_fontweight('bold')
+                    elif text.get_text() == 'FPS':
+                        text.set_fontweight('bold')  # Make FPS bold in legend
             
             # Remove spines
             for spine in ax1.spines.values():
