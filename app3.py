@@ -4,44 +4,25 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import re
 
 st.set_page_config(page_title="🎮 Final Gaming Chart Viewer", layout="wide")
 
 st.title("📊 Gaming Chart Viewer (FPS & CPU)")
-st.markdown("Upload CSV performa, dan aplikasi akan memproses serta menampilkan grafik FPS & CPU dengan waktu (menit:detik).")
+st.markdown("Upload CSV performa, dan aplikasi akan menampilkan grafik **FPS & CPU Usage** dengan waktu (menit:detik).")
 
 uploaded_file = st.file_uploader("📤 Upload CSV File", type=["csv"])
 
 if uploaded_file:
     try:
-        # Baca file baris-per-baris
-        raw_lines = uploaded_file.readlines()
-        cleaned_rows = []
+        # Baca CSV langsung (karena format sudah rapi)
+        df = pd.read_csv(uploaded_file)
 
-        for line in raw_lines:
-            decoded = line.decode("utf-8").strip()
-            split_line = re.split(r'[\s,]+', decoded)
-            row = []
-            for x in split_line:
-                try:
-                    row.append(int(float(x)))
-                except:
-                    continue
-            if row:
-                cleaned_rows.append(row)
+        # Validasi kolom wajib
+        if "FPS" in df.columns and "CPU(%)" in df.columns:
+            fps = df["FPS"]
+            cpu = df["CPU(%)"]
 
-        df = pd.DataFrame(cleaned_rows)
-
-        st.write(f"File shape: {df.shape}")
-        st.write("Preview data:", df.head())
-
-
-        if df.shape[1] >= 5:
-            fps = df[0]
-            cpu = df[4]
-
-            # Buat DataFrame final
+            # Buat kolom tambahan: Frame dan Time
             processed = pd.DataFrame({
                 "Frame": np.arange(len(fps)),
                 "Time": [f"{int(t//60)}:{int(t%60):02d}" for t in range(len(fps))],
@@ -49,11 +30,11 @@ if uploaded_file:
                 "CPUUsage": cpu
             })
 
-            # Hitung limit FPS
+            # Hitung limit FPS otomatis (150% dari average)
             fps_mean = fps.mean()
             fps_max = int(fps_mean * 1.5)
 
-            # Buat Dual Axis Chart
+            # Buat dual axis chart
             st.subheader("📈 Grafik FPS & CPU Usage")
             fig, ax1 = plt.subplots(figsize=(14, 5))
 
@@ -69,12 +50,12 @@ if uploaded_file:
             ax2.tick_params(axis='y', labelcolor="orange")
             ax2.set_ylim(0, 100)
 
-            plt.title("FPS & CPU Usage (Dual Axis)")
+            plt.title("FPS & CPU Usage Over Time (Dual Axis)")
             ax1.grid(True)
             plt.xticks(rotation=45)
             st.pyplot(fig)
         else:
-            st.warning("❗ Data tidak cukup kolom (minimal 5).")
+            st.warning("❗ File tidak memiliki kolom 'FPS' dan 'CPU(%)'. Periksa header CSV Anda.")
 
     except Exception as e:
         st.error(f"❌ Gagal memproses file: {e}")
