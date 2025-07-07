@@ -21,7 +21,6 @@ class GamingPerformanceAnalyzer:
         self.processed_data = None
         self.removed_indices = []
         self.debug_mode = True
-        self.available_columns = {}
     
     def load_csv_data(self, file_data, filename):
         """Load and validate CSV data with multiple format support"""
@@ -56,15 +55,11 @@ class GamingPerformanceAnalyzer:
         if self.debug_mode:
             st.write(f"🔍 **Debug - Columns found**: {columns}")
         
-        # Find all available columns and their types
-        available_columns = {}
-        
         # Find FPS column
         fps_col = None
         for col in columns:
             if 'fps' in col.lower() or col.strip().upper() == 'FPS':
                 fps_col = col
-                available_columns['FPS'] = col
                 break
         
         # Find CPU column
@@ -72,27 +67,7 @@ class GamingPerformanceAnalyzer:
         for col in columns:
             if 'cpu' in col.lower() and '%' in col:
                 cpu_col = col
-                available_columns['CPU'] = col
                 break
-        
-        # Find other potential gaming metrics
-        for col in columns:
-            col_lower = col.lower()
-            if 'gpu' in col_lower and '%' in col:
-                available_columns['GPU'] = col
-            elif 'ram' in col_lower or 'memory' in col_lower:
-                available_columns['RAM'] = col
-            elif 'temp' in col_lower:
-                available_columns['Temperature'] = col
-            elif 'battery' in col_lower:
-                available_columns['Battery'] = col
-            elif 'jank' in col_lower or 'stutter' in col_lower:
-                available_columns['Jank'] = col
-            elif 'ping' in col_lower or 'network' in col_lower or 'latency' in col_lower:
-                available_columns['Network'] = col
-        
-        # Store available columns for toggle feature
-        self.available_columns = available_columns
         
         if not fps_col:
             st.error("❌ FPS column not found. Looking for columns containing 'FPS' or 'fps'")
@@ -107,24 +82,17 @@ class GamingPerformanceAnalyzer:
         if self.debug_mode:
             st.write(f"✅ **Found FPS column**: `{fps_col}`")
             st.write(f"✅ **Found CPU column**: `{cpu_col}`")
-            if len(available_columns) > 2:
-                st.write(f"🎯 **Additional columns found**: {list(available_columns.keys())}")
         
         # Convert to numeric and clean data
-        clean_data_dict = {}
+        fps_data = pd.to_numeric(df[fps_col], errors='coerce')
+        cpu_data = pd.to_numeric(df[cpu_col], errors='coerce')
         
-        for metric, col_name in available_columns.items():
-            data = pd.to_numeric(df[col_name], errors='coerce')
-            clean_data_dict[metric] = data
-            
-            if self.debug_mode:
-                st.write(f"🔍 **{metric} range**: {data.min():.1f} - {data.max():.1f}")
+        if self.debug_mode:
+            st.write(f"🔍 **Raw FPS range**: {fps_data.min():.1f} - {fps_data.max():.1f}")
+            st.write(f"🔍 **Raw CPU range**: {cpu_data.min():.1f} - {cpu_data.max():.1f}")
         
-        # Remove invalid data (but keep track)
-        valid_mask = pd.Series(True, index=df.index)
-        for metric, data in clean_data_dict.items():
-            valid_mask &= ~(data.isna() | (data < 0))
-        
+        # Remove invalid data
+        valid_mask = ~(fps_data.isna() | cpu_data.isna() | (fps_data < 0) | (cpu_data < 0))
         invalid_count = len(df) - valid_mask.sum()
         
         if invalid_count > 0:
@@ -132,31 +100,30 @@ class GamingPerformanceAnalyzer:
         
         # Create clean dataset
         clean_data = pd.DataFrame({
+            'FPS': fps_data[valid_mask].values,
+            'CPU': cpu_data[valid_mask].values,
             'TimeMinutes': np.arange(valid_mask.sum()) / 60
-        })
-        
-        for metric, data in clean_data_dict.items():
-            clean_data[metric] = data[valid_mask].values
+        }).reset_index(drop=True)
         
         self.original_data = clean_data.copy()
         
         if self.debug_mode:
             st.write(f"✅ **Final data check**:")
             st.write(f"   - Total rows: {len(clean_data)}")
-            st.write(f"   - Available metrics: {list(self.available_columns.keys())}")
+            st.write(f"   - FPS range: {clean_data['FPS'].min():.1f} - {clean_data['FPS'].max():.1f}")
+            st.write(f"   - CPU range: {clean_data['CPU'].min():.1f} - {clean_data['CPU'].max():.1f}")
+            st.write(f"   - Average FPS: {clean_data['FPS'].mean():.1f}")
         
         st.success(f"✅ Data loaded successfully using delimiter '{delimiter}' and encoding '{encoding}'")
         
         # Data summary
-        cols = st.columns(min(4, len(available_columns)))
-        for i, (metric, col_name) in enumerate(available_columns.items()):
-            with cols[i % len(cols)]:
-                if metric == 'FPS':
-                    st.metric(f"🎯 {metric}", f"{clean_data[metric].min():.0f} - {clean_data[metric].max():.0f}")
-                elif metric == 'CPU':
-                    st.metric(f"🖥️ {metric}", f"{clean_data[metric].min():.0f}% - {clean_data[metric].max():.0f}%")
-                else:
-                    st.metric(f"📊 {metric}", f"{clean_data[metric].min():.0f} - {clean_data[metric].max():.0f}")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📊 Total Records", f"{len(clean_data):,}")
+        with col2:
+            st.metric("🎯 FPS Range", f"{clean_data['FPS'].min():.0f} - {clean_data['FPS'].max():.0f}")
+        with col3:
+            st.metric("🖥️ CPU Range", f"{clean_data['CPU'].min():.0f}% - {clean_data['CPU'].max():.0f}%")
         
         return True
     
@@ -204,7 +171,7 @@ class GamingPerformanceAnalyzer:
         return True
     
     def create_performance_chart(self, config):
-        """Create performance chart with dynamic toggles"""
+        """Create performance chart"""
         try:
             data = self.processed_data if self.processed_data is not None else self.original_data
             
@@ -217,84 +184,36 @@ class GamingPerformanceAnalyzer:
             fig, ax1 = plt.subplots(figsize=(16, 9))
             fig.patch.set_facecolor('#0E1117')
             
-            # Time data
+            # Configure primary axis (CPU) - will be in background
+            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
+            ax1.set_ylabel('CPU Usage (%)', fontsize=12, color=config['cpu_color'], fontweight='bold')
+            ax1.tick_params(axis='both', colors='white', labelsize=10)
+            ax1.set_ylim(0, 100)
+            
+            # Configure secondary axis (FPS) - will be in foreground
+            ax2 = ax1.twinx()
+            ax2.set_ylabel('FPS', fontsize=12, color=config['fps_color'], fontweight='bold')
+            ax2.tick_params(axis='y', colors='white', labelsize=10)
+            
+            # Plot data - CPU first (background), then FPS (foreground)
             time_data = data['TimeMinutes']
             
-            # Color scheme for different metrics
-            colors = {
-                'FPS': config.get('fps_color', '#00D4FF'),
-                'CPU': config.get('cpu_color', '#FF6B35'),
-                'GPU': '#00FF7F',
-                'RAM': '#FFD700',
-                'Temperature': '#FF1493',
-                'Battery': '#32CD32',
-                'Jank': '#FF4500',
-                'Network': '#9370DB'
-            }
-            
-            # Plot CPU first (background) if enabled
-            if not config.get('hide_cpu', False) and 'CPU' in data.columns:
-                ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-                ax1.set_ylabel('CPU Usage (%)', fontsize=12, color=colors['CPU'], fontweight='bold')
-                ax1.tick_params(axis='both', colors='white', labelsize=10)
-                ax1.set_ylim(0, 100)
-                
+            if not config['hide_cpu']:
                 cpu_data = data['CPU']
-                ax1.plot(time_data, cpu_data, 
-                        color=colors['CPU'], linewidth=2.0, 
-                        label='CPU Usage', alpha=0.6, zorder=1)
+                line1 = ax1.plot(time_data, cpu_data, 
+                               color=config['cpu_color'], linewidth=2.0, 
+                               label='CPU Usage', alpha=0.6, zorder=1)
             
-            # Create secondary axis for FPS (foreground)
-            ax2 = ax1.twinx()
-            
-            if not config.get('hide_fps', False) and 'FPS' in data.columns:
-                ax2.set_ylabel('FPS', fontsize=12, color=colors['FPS'], fontweight='bold')
-                ax2.tick_params(axis='y', colors='white', labelsize=10)
-                
+            if not config['hide_fps']:
                 fps_data = data['FPS']
+                line2 = ax2.plot(time_data, fps_data, 
+                               color=config['fps_color'], linewidth=3.0, 
+                               label='FPS', alpha=0.9, zorder=3)
+            
+            # Set FPS axis limits with padding
+            if not config['hide_fps']:
                 fps_max = fps_data.max() * 1.1
                 ax2.set_ylim(0, fps_max)
-                
-                ax2.plot(time_data, fps_data, 
-                        color=colors['FPS'], linewidth=3.0, 
-                        label='FPS', alpha=0.9, zorder=3)
-            
-            # Plot additional metrics if available and enabled
-            additional_axes = {}
-            y_position = 0.05
-            
-            for metric in ['GPU', 'RAM', 'Temperature', 'Battery', 'Jank', 'Network']:
-                if (metric in data.columns and 
-                    not config.get(f'hide_{metric.lower()}', False)):
-                    
-                    # Create additional axis for this metric
-                    if metric not in additional_axes:
-                        if len(additional_axes) == 0:
-                            ax_new = ax1.twinx()
-                        else:
-                            ax_new = ax1.twinx()
-                            # Offset the spine
-                            ax_new.spines['right'].set_position(('outward', 60 * len(additional_axes)))
-                        
-                        additional_axes[metric] = ax_new
-                    
-                    ax_metric = additional_axes[metric]
-                    metric_data = data[metric]
-                    
-                    # Set appropriate y-limits based on metric type
-                    if metric in ['GPU', 'RAM', 'Battery']:
-                        ax_metric.set_ylim(0, 100)
-                    elif metric == 'Temperature':
-                        ax_metric.set_ylim(20, 100)
-                    else:
-                        ax_metric.set_ylim(metric_data.min() * 0.9, metric_data.max() * 1.1)
-                    
-                    ax_metric.plot(time_data, metric_data,
-                                  color=colors[metric], linewidth=2.0,
-                                  label=metric, alpha=0.7, zorder=2)
-                    
-                    ax_metric.set_ylabel(f'{metric}', fontsize=10, color=colors[metric])
-                    ax_metric.tick_params(axis='y', colors=colors[metric], labelsize=8)
             
             # Chart styling
             ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
@@ -316,19 +235,12 @@ class GamingPerformanceAnalyzer:
             if config['smartphone_name']:
                 legend_elements = [plt.Line2D([0], [0], color='none', label=config['smartphone_name'])]
                 
-                # Add legend items for visible metrics
-                if not config.get('hide_fps', False) and 'FPS' in data.columns:
-                    legend_elements.append(plt.Line2D([0], [0], color=colors['FPS'], 
+                if not config['hide_fps']:
+                    legend_elements.append(plt.Line2D([0], [0], color=config['fps_color'], 
                                                     linewidth=3.0, label='FPS'))
-                if not config.get('hide_cpu', False) and 'CPU' in data.columns:
-                    legend_elements.append(plt.Line2D([0], [0], color=colors['CPU'], 
+                if not config['hide_cpu']:
+                    legend_elements.append(plt.Line2D([0], [0], color=config['cpu_color'], 
                                                     linewidth=2, label='CPU Usage'))
-                
-                for metric in ['GPU', 'RAM', 'Temperature', 'Battery', 'Jank', 'Network']:
-                    if (metric in data.columns and 
-                        not config.get(f'hide_{metric.lower()}', False)):
-                        legend_elements.append(plt.Line2D([0], [0], color=colors[metric], 
-                                                        linewidth=2, label=metric))
                 
                 legend = ax2.legend(handles=legend_elements, loc='upper right', 
                                   framealpha=0.9, fancybox=True)
