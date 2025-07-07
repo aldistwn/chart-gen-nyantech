@@ -450,7 +450,235 @@ class GamingPerformanceAnalyzer:
             'removed_frames': len(self.removed_indices)
         }
     
-    def export_processed_data(self, game_title):
+    def validate_processed_vs_raw(self):
+        """Compare processed data vs raw data and provide detailed analysis"""
+        if self.original_data is None:
+            return False, "No original data available"
+        
+        if self.processed_data is None:
+            return False, "No processed data available"
+        
+        # Get the data to compare
+        raw_fps = self.original_data['FPS']
+        raw_cpu = self.original_data['CPU']
+        
+        processed_fps = self.processed_data['FPS_Smooth'] if 'FPS_Smooth' in self.processed_data else self.processed_data['FPS']
+        processed_cpu = self.processed_data['CPU_Smooth'] if 'CPU_Smooth' in self.processed_data else self.processed_data['CPU']
+        
+        # Basic stats comparison
+        raw_fps_stats = {
+            'min': raw_fps.min(),
+            'max': raw_fps.max(),
+            'mean': raw_fps.mean(),
+            'std': raw_fps.std(),
+            'count': len(raw_fps)
+        }
+        
+        processed_fps_stats = {
+            'min': processed_fps.min(),
+            'max': processed_fps.max(),
+            'mean': processed_fps.mean(),
+            'std': processed_fps.std(),
+            'count': len(processed_fps)
+        }
+        
+        raw_cpu_stats = {
+            'min': raw_cpu.min(),
+            'max': raw_cpu.max(),
+            'mean': raw_cpu.mean(),
+            'std': raw_cpu.std(),
+            'count': len(raw_cpu)
+        }
+        
+        processed_cpu_stats = {
+            'min': processed_cpu.min(),
+            'max': processed_cpu.max(),
+            'mean': processed_cpu.mean(),
+            'std': processed_cpu.std(),
+            'count': len(processed_cpu)
+        }
+        
+        # Calculate differences
+        fps_differences = {
+            'min_diff': processed_fps_stats['min'] - raw_fps_stats['min'],
+            'max_diff': processed_fps_stats['max'] - raw_fps_stats['max'],
+            'mean_diff': processed_fps_stats['mean'] - raw_fps_stats['mean'],
+            'std_diff': processed_fps_stats['std'] - raw_fps_stats['std'],
+            'count_diff': processed_fps_stats['count'] - raw_fps_stats['count']
+        }
+        
+        cpu_differences = {
+            'min_diff': processed_cpu_stats['min'] - raw_cpu_stats['min'],
+            'max_diff': processed_cpu_stats['max'] - raw_cpu_stats['max'],
+            'mean_diff': processed_cpu_stats['mean'] - raw_cpu_stats['mean'],
+            'std_diff': processed_cpu_stats['std'] - raw_cpu_stats['std'],
+            'count_diff': processed_cpu_stats['count'] - raw_cpu_stats['count']
+        }
+        
+        # Determine if data is significantly different
+        fps_threshold = 0.1  # Small threshold for floating point comparison
+        cpu_threshold = 0.1
+        
+        fps_identical = (
+            abs(fps_differences['min_diff']) < fps_threshold and
+            abs(fps_differences['max_diff']) < fps_threshold and
+            abs(fps_differences['mean_diff']) < fps_threshold and
+            fps_differences['count_diff'] == 0
+        )
+        
+        cpu_identical = (
+            abs(cpu_differences['min_diff']) < cpu_threshold and
+            abs(cpu_differences['max_diff']) < cpu_threshold and
+            abs(cpu_differences['mean_diff']) < cpu_threshold and
+            cpu_differences['count_diff'] == 0
+        )
+        
+        # Create validation result
+        validation_result = {
+            'fps_identical': fps_identical,
+            'cpu_identical': cpu_identical,
+            'raw_fps_stats': raw_fps_stats,
+            'processed_fps_stats': processed_fps_stats,
+            'raw_cpu_stats': raw_cpu_stats,
+            'processed_cpu_stats': processed_cpu_stats,
+            'fps_differences': fps_differences,
+            'cpu_differences': cpu_differences
+        }
+        
+        return True, validation_result
+    
+    def display_data_validation_report(self, validation_result):
+        """Display comprehensive data validation report"""
+        
+        fps_identical = validation_result['fps_identical']
+        cpu_identical = validation_result['cpu_identical']
+        
+        # Header
+        if fps_identical and cpu_identical:
+            st.success("✅ **DATA VALIDATION PASSED**: Processed data identical to raw data")
+            validation_status = "identical"
+        else:
+            st.warning("⚠️ **DATA VALIDATION**: Differences detected between raw and processed data")
+            validation_status = "different"
+        
+        # Create comparison table
+        with st.expander("🔍 **Data Validation Details** - Click to expand"):
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("📊 FPS Comparison")
+                
+                if fps_identical:
+                    st.success("✅ FPS data identical")
+                else:
+                    st.warning("⚠️ FPS data modified")
+                
+                # FPS comparison table
+                fps_comparison_data = {
+                    'Metric': ['Min', 'Max', 'Average', 'Std Dev', 'Count'],
+                    'Raw Data': [
+                        f"{validation_result['raw_fps_stats']['min']:.1f}",
+                        f"{validation_result['raw_fps_stats']['max']:.1f}",
+                        f"{validation_result['raw_fps_stats']['mean']:.1f}",
+                        f"{validation_result['raw_fps_stats']['std']:.1f}",
+                        f"{validation_result['raw_fps_stats']['count']}"
+                    ],
+                    'Processed Data': [
+                        f"{validation_result['processed_fps_stats']['min']:.1f}",
+                        f"{validation_result['processed_fps_stats']['max']:.1f}",
+                        f"{validation_result['processed_fps_stats']['mean']:.1f}",
+                        f"{validation_result['processed_fps_stats']['std']:.1f}",
+                        f"{validation_result['processed_fps_stats']['count']}"
+                    ],
+                    'Difference': [
+                        f"{validation_result['fps_differences']['min_diff']:+.1f}",
+                        f"{validation_result['fps_differences']['max_diff']:+.1f}",
+                        f"{validation_result['fps_differences']['mean_diff']:+.1f}",
+                        f"{validation_result['fps_differences']['std_diff']:+.1f}",
+                        f"{validation_result['fps_differences']['count_diff']:+d}"
+                    ]
+                }
+                
+                fps_df = pd.DataFrame(fps_comparison_data)
+                st.dataframe(fps_df, use_container_width=True)
+            
+            with col2:
+                st.subheader("🖥️ CPU Comparison")
+                
+                if cpu_identical:
+                    st.success("✅ CPU data identical")
+                else:
+                    st.warning("⚠️ CPU data modified")
+                
+                # CPU comparison table
+                cpu_comparison_data = {
+                    'Metric': ['Min', 'Max', 'Average', 'Std Dev', 'Count'],
+                    'Raw Data': [
+                        f"{validation_result['raw_cpu_stats']['min']:.1f}%",
+                        f"{validation_result['raw_cpu_stats']['max']:.1f}%",
+                        f"{validation_result['raw_cpu_stats']['mean']:.1f}%",
+                        f"{validation_result['raw_cpu_stats']['std']:.1f}%",
+                        f"{validation_result['raw_cpu_stats']['count']}"
+                    ],
+                    'Processed Data': [
+                        f"{validation_result['processed_cpu_stats']['min']:.1f}%",
+                        f"{validation_result['processed_cpu_stats']['max']:.1f}%",
+                        f"{validation_result['processed_cpu_stats']['mean']:.1f}%",
+                        f"{validation_result['processed_cpu_stats']['std']:.1f}%",
+                        f"{validation_result['processed_cpu_stats']['count']}"
+                    ],
+                    'Difference': [
+                        f"{validation_result['cpu_differences']['min_diff']:+.1f}%",
+                        f"{validation_result['cpu_differences']['max_diff']:+.1f}%",
+                        f"{validation_result['cpu_differences']['mean_diff']:+.1f}%",
+                        f"{validation_result['cpu_differences']['std_diff']:+.1f}%",
+                        f"{validation_result['cpu_differences']['count_diff']:+d}"
+                    ]
+                }
+                
+                cpu_df = pd.DataFrame(cpu_comparison_data)
+                st.dataframe(cpu_df, use_container_width=True)
+            
+            # Summary and recommendations
+            st.subheader("📋 Validation Summary")
+            
+            if validation_status == "identical":
+                st.markdown("""
+                ✅ **All Good!** Your processed data is identical to the raw CSV data.
+                - No unexpected modifications detected
+                - Chart will accurately represent your original data
+                - Safe to proceed with analysis
+                """)
+            else:
+                st.markdown("""
+                ⚠️ **Data Modified:** Processing has changed your data from the original CSV.
+                
+                **This might be expected if you enabled:**
+                - 🚫 Outlier removal (reduces data points)
+                - 🎯 FPS/CPU smoothing (changes values)
+                - 🔬 Savgol processing (applies filters)
+                
+                **This might be unexpected if:**
+                - 📊 You're in Raw CSV mode but still see differences
+                - 🔧 Processing options are disabled but data changed
+                - 🚨 Values are outside reasonable ranges
+                """)
+                
+                # Specific warnings for significant changes
+                fps_mean_change = abs(validation_result['fps_differences']['mean_diff'])
+                fps_range_change = abs(validation_result['fps_differences']['max_diff']) + abs(validation_result['fps_differences']['min_diff'])
+                
+                if fps_mean_change > 5:
+                    st.error(f"🚨 **Significant FPS change detected**: Average FPS changed by {fps_mean_change:.1f}")
+                
+                if fps_range_change > 10:
+                    st.error(f"🚨 **Significant FPS range change**: Range boundaries changed by {fps_range_change:.1f}")
+                
+                if validation_result['fps_differences']['count_diff'] != 0:
+                    st.warning(f"📊 **Data point count changed**: {validation_result['fps_differences']['count_diff']:+d} data points")
+        
+        return validation_status
         """Export processed data to CSV with integrity validation"""
         if self.processed_data is None:
             return None, None
@@ -669,39 +897,62 @@ def main():
                                 st.info("📊 **RAW CSV MODE**: Chart generated from pure CSV data without any processing")
                         
                         if success:
-                            # Create chart
-                            st.subheader("📊 Performance Chart")
+                            # ✅ DATA VALIDATION CHECK BEFORE CHART
+                            st.subheader("🔍 Data Validation Check")
                             
-                            # Add mode indicator
-                            if enable_savgol:
-                                processing_status = "🔬 **Savgol Processing Enabled**"
-                                if enable_outlier_removal or fps_smooth or cpu_smooth:
-                                    processing_status += " (with filters applied)"
-                                else:
-                                    processing_status += " (ready for filtering)"
-                            else:
-                                processing_status = "📊 **Raw CSV Mode** - Pure data from file"
+                            with st.spinner('🔍 Validating processed data vs raw data...'):
+                                validation_success, validation_result = analyzer.validate_processed_vs_raw()
                             
-                            st.markdown(f"*{processing_status}*")
-                            
-                            chart_config = {
-                                'game_title': game_title,
-                                'game_settings': game_settings,
-                                'game_mode': game_mode,
-                                'smartphone_name': smartphone_name,
-                                'fps_color': fps_color,
-                                'cpu_color': cpu_color,
-                                'hide_fps': hide_fps,
-                                'hide_cpu': hide_cpu
-                            }
-                            
-                            with st.spinner('🎨 Generating chart...'):
-                                chart_fig = analyzer.create_performance_chart(chart_config)
+                            if validation_success:
+                                validation_status = analyzer.display_data_validation_report(validation_result)
                                 
-                                if chart_fig:
-                                    st.pyplot(chart_fig, use_container_width=True)
+                                # Create chart
+                                st.subheader("📊 Performance Chart")
+                                
+                                # Add mode indicator with validation status
+                                if enable_savgol:
+                                    processing_status = "🔬 **Savgol Processing Enabled**"
+                                    if enable_outlier_removal or fps_smooth or cpu_smooth:
+                                        processing_status += " (with filters applied)"
+                                    else:
+                                        processing_status += " (ready for filtering)"
                                 else:
-                                    st.error("Failed to generate chart")
+                                    processing_status = "📊 **Raw CSV Mode** - Pure data from file"
+                                
+                                # Add validation badge
+                                if validation_status == "identical":
+                                    validation_badge = "✅ **Data Validated: Identical to Raw**"
+                                else:
+                                    validation_badge = "⚠️ **Data Validated: Modified from Raw**"
+                                
+                                st.markdown(f"*{processing_status}*")
+                                st.markdown(f"*{validation_badge}*")
+                                
+                                chart_config = {
+                                    'game_title': game_title,
+                                    'game_settings': game_settings,
+                                    'game_mode': game_mode,
+                                    'smartphone_name': smartphone_name,
+                                    'fps_color': fps_color,
+                                    'cpu_color': cpu_color,
+                                    'hide_fps': hide_fps,
+                                    'hide_cpu': hide_cpu
+                                }
+                                
+                                with st.spinner('🎨 Generating validated chart...'):
+                                    chart_fig = analyzer.create_performance_chart(chart_config)
+                                    
+                                    if chart_fig:
+                                        st.pyplot(chart_fig, use_container_width=True)
+                                        
+                                        # Add post-chart validation summary
+                                        if validation_status == "different":
+                                            st.info("💡 **Chart Note**: This chart shows processed data. Check validation details above to understand what changed from your original CSV.")
+                                    else:
+                                        st.error("Failed to generate chart")
+                            else:
+                                st.error(f"❌ Data validation failed: {validation_result}")
+                                st.error("Cannot proceed with chart generation due to validation errors")
                     else:
                         st.error("❌ No data loaded. Please upload a valid CSV file first.")
     
@@ -775,6 +1026,31 @@ def main():
                 st.error("❌ Export blocked due to data integrity issues")
         else:
             st.info("📤 Upload CSV file to see performance statistics")
+    
+    with st.expander("🔍 Data Validation Features"):
+        st.markdown("""
+        **🔍 Automatic Data Validation:**
+        - **Pre-Chart Check**: Compares processed vs raw data before showing chart
+        - **Statistical Analysis**: Min, Max, Average, Standard Deviation comparison
+        - **Difference Detection**: Identifies any modifications from original CSV
+        - **Validation Report**: Detailed breakdown of all changes
+        
+        **Validation Statuses:**
+        - ✅ **Identical**: Processed data matches raw CSV exactly
+        - ⚠️ **Modified**: Processing has changed the data (expected with filters)
+        - 🚨 **Significant Changes**: Large deviations that might indicate issues
+        
+        **What Triggers Differences:**
+        - 🚫 **Outlier Removal**: Reduces data point count
+        - 🎯 **Smoothing**: Changes FPS/CPU values slightly
+        - 🔬 **Savgol Processing**: Applies mathematical filters
+        
+        **Benefits:**
+        - 🛡️ **Data Integrity**: Ensures no unexpected modifications
+        - 📊 **Transparency**: Shows exactly what changed
+        - 🔍 **Quality Control**: Detects processing errors early
+        - 📈 **Confidence**: Know your chart accurately represents intended data
+        """)
     
     with st.expander("🎛️ Universal Processing Control"):
         st.markdown("""
@@ -852,8 +1128,8 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #888; padding: 1rem;">
-        🎮 Gaming Performance Analyzer v2.1 - Universal Toggle<br>
-        <small>🔬 Savgol Processing • 📊 Raw CSV Mode • Bulletproof data integrity</small>
+        🎮 Gaming Performance Analyzer v2.2 - Data Validation<br>
+        <small>🔍 Pre-Chart Validation • 🔬 Savgol Processing • 📊 Raw CSV Mode • 🛡️ Data Integrity</small>
     </div>
     """, unsafe_allow_html=True)
 
