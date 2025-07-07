@@ -559,34 +559,53 @@ def main():
         
         st.header("🔧 Data Processing")
         
+        # Universal Savgol Filter Toggle
+        st.markdown("### 🎛️ **Universal Processing Control**")
+        enable_savgol = st.toggle("🔬 Enable Savgol Processing", value=False, 
+                                 help="Master switch: When OFF, only raw CSV data is used for charts")
+        
+        if not enable_savgol:
+            st.info("📊 **RAW CSV MODE**: Only pure CSV data will be used - no processing applied")
+            st.markdown("---")
+        
         # Debug mode toggle
         debug_mode = st.toggle("🐛 Debug Mode", value=True, help="Show detailed processing information")
         analyzer.debug_mode = debug_mode
         
-        # Outlier removal
-        enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
-        if enable_outlier_removal:
-            outlier_method = st.selectbox("Method", ['percentile', 'iqr', 'zscore'])
-            if outlier_method == 'percentile':
-                outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1)
-            elif outlier_method == 'zscore':
-                outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1)
-            else:
-                outlier_threshold = 1.5
-        
-        # Smoothing
-        col1, col2 = st.columns(2)
-        with col1:
-            fps_smooth = st.toggle("🎯 FPS Smoothing", value=False)
-            if fps_smooth:
-                fps_window = st.slider("FPS Window", 3, 51, 7, step=2, 
-                                     help="Larger window = smoother line")
-        
-        with col2:
-            cpu_smooth = st.toggle("🖥️ CPU Smoothing", value=False)
-            if cpu_smooth:
-                cpu_window = st.slider("CPU Window", 3, 51, 7, step=2,
-                                     help="Larger window = smoother line")
+        if enable_savgol:
+            st.markdown("### 🔧 **Processing Options** (Savgol Enabled)")
+            
+            # Outlier removal
+            enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
+            if enable_outlier_removal:
+                outlier_method = st.selectbox("Method", ['percentile', 'iqr', 'zscore'])
+                if outlier_method == 'percentile':
+                    outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1)
+                elif outlier_method == 'zscore':
+                    outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1)
+                else:
+                    outlier_threshold = 1.5
+            
+            # Smoothing
+            col1, col2 = st.columns(2)
+            with col1:
+                fps_smooth = st.toggle("🎯 FPS Smoothing", value=False)
+                if fps_smooth:
+                    fps_window = st.slider("FPS Window", 3, 51, 7, step=2, 
+                                         help="Larger window = smoother line")
+            
+            with col2:
+                cpu_smooth = st.toggle("🖥️ CPU Smoothing", value=False)
+                if cpu_smooth:
+                    cpu_window = st.slider("CPU Window", 3, 51, 7, step=2,
+                                         help="Larger window = smoother line")
+        else:
+            # Set all processing to disabled when Savgol is off
+            enable_outlier_removal = False
+            fps_smooth = False
+            cpu_smooth = False
+            fps_window = 7
+            cpu_window = 7
     
     # Main content
     col1, col2 = st.columns([2, 1])
@@ -609,28 +628,61 @@ def main():
                     
                     # Process data only if data is loaded successfully
                     if analyzer.original_data is not None:
-                        # Outlier removal
-                        if enable_outlier_removal:
-                            with st.spinner('🚫 Removing outliers...'):
-                                analyzer.remove_outliers(outlier_method, outlier_threshold)
                         
-                        # Apply smoothing with integrity checks
-                        fps_window = fps_window if fps_smooth else 7
-                        cpu_window = cpu_window if cpu_smooth else 7
-                        
-                        # Show processing status
-                        if fps_smooth or cpu_smooth:
-                            with st.spinner('🔧 Applying smoothing filters...'):
-                                success = analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                        # Check if Savgol processing is enabled
+                        if enable_savgol:
+                            # Full processing pipeline enabled
+                            if enable_outlier_removal:
+                                with st.spinner('🚫 Removing outliers...'):
+                                    analyzer.remove_outliers(outlier_method, outlier_threshold)
+                            
+                            # Apply smoothing with integrity checks
+                            fps_window = fps_window if fps_smooth else 7
+                            cpu_window = cpu_window if cpu_smooth else 7
+                            
+                            # Show processing status
+                            if fps_smooth or cpu_smooth:
+                                with st.spinner('🔧 Applying Savgol smoothing filters...'):
+                                    success = analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                            else:
+                                with st.spinner('📊 Preparing processed data (no smoothing)...'):
+                                    success = analyzer.apply_smoothing(False, False, fps_window, cpu_window)
+                            
+                            if not success:
+                                st.error("❌ Data processing failed - check debug output above")
+                                success = False
                         else:
-                            with st.spinner('📊 Preparing raw CSV data...'):
-                                success = analyzer.apply_smoothing(False, False, fps_window, cpu_window)
+                            # RAW CSV MODE - No processing at all
+                            with st.spinner('📊 Using pure raw CSV data...'):
+                                # Set processed_data to exact copy of original_data
+                                analyzer.processed_data = analyzer.original_data.copy()
+                                analyzer.processed_data['FPS_Smooth'] = analyzer.processed_data['FPS'].copy()
+                                analyzer.processed_data['CPU_Smooth'] = analyzer.processed_data['CPU'].copy()
+                                success = True
+                                
+                                if analyzer.debug_mode:
+                                    st.success("✅ **RAW CSV MODE**: No Savgol processing applied")
+                                    st.write(f"   - Using pure CSV data: {len(analyzer.processed_data)} rows")
+                                    st.write(f"   - FPS range: {analyzer.processed_data['FPS'].min():.1f} - {analyzer.processed_data['FPS'].max():.1f}")
+                                    st.write(f"   - CPU range: {analyzer.processed_data['CPU'].min():.1f} - {analyzer.processed_data['CPU'].max():.1f}")
+                                
+                                st.info("📊 **RAW CSV MODE**: Chart generated from pure CSV data without any processing")
                         
-                        if not success:
-                            st.error("❌ Data processing failed - check debug output above")
-                        else:
+                        if success:
                             # Create chart
                             st.subheader("📊 Performance Chart")
+                            
+                            # Add mode indicator
+                            if enable_savgol:
+                                processing_status = "🔬 **Savgol Processing Enabled**"
+                                if enable_outlier_removal or fps_smooth or cpu_smooth:
+                                    processing_status += " (with filters applied)"
+                                else:
+                                    processing_status += " (ready for filtering)"
+                            else:
+                                processing_status = "📊 **Raw CSV Mode** - Pure data from file"
+                            
+                            st.markdown(f"*{processing_status}*")
                             
                             chart_config = {
                                 'game_title': game_title,
@@ -724,7 +776,25 @@ def main():
         else:
             st.info("📤 Upload CSV file to see performance statistics")
     
-    # Help section
+    with st.expander("🎛️ Universal Processing Control"):
+        st.markdown("""
+        **🔬 Savgol Processing Toggle:**
+        - **ENABLED**: Full processing pipeline available (outlier removal, smoothing)
+        - **DISABLED**: Pure raw CSV mode - no processing, just direct chart from file data
+        
+        **Raw CSV Mode Benefits:**
+        - ✅ **Zero Processing**: Exactly what's in your CSV file
+        - ✅ **Maximum Accuracy**: No algorithms modifying your data
+        - ✅ **Performance**: Fastest chart generation
+        - ✅ **Transparency**: What you see is exactly what you uploaded
+        
+        **Savgol Processing Mode Benefits:**
+        - 🔧 **Outlier Removal**: Clean up bad data points
+        - 🎯 **Smoothing**: Reduce noise while preserving trends
+        - 📊 **Advanced Analytics**: More processing options
+        - 🛡️ **Data Integrity**: Built-in validation and safety checks
+        """)
+    
     with st.expander("📋 CSV Format Requirements"):
         st.markdown("""
         **Required Columns:**
@@ -782,8 +852,8 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #888; padding: 1rem;">
-        🎮 Gaming Performance Analyzer v2.0 - FIXED<br>
-        <small>Bulletproof data integrity • Professional gaming analytics • Bug-free processing</small>
+        🎮 Gaming Performance Analyzer v2.1 - Universal Toggle<br>
+        <small>🔬 Savgol Processing • 📊 Raw CSV Mode • Bulletproof data integrity</small>
     </div>
     """, unsafe_allow_html=True)
 
