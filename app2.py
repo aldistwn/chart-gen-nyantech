@@ -316,6 +316,46 @@ class GamingPerformanceAnalyzer:
             'removed_frames': len(self.removed_indices)
         }
     
+    def create_shadow_table(self):
+        """Create shadow table for video chart creation"""
+        data = self.processed_data if self.processed_data is not None else self.original_data
+        
+        if data is None:
+            return None
+        
+        # Detect frame rate from data frequency
+        total_frames = len(data)
+        total_time_minutes = data['TimeMinutes'].max()
+        
+        # Calculate estimated FPS based on data frequency
+        if total_time_minutes > 0:
+            frames_per_minute = total_frames / total_time_minutes
+            estimated_fps = frames_per_minute / 60  # Convert to frames per second
+            
+            # Round to common gaming FPS values
+            if estimated_fps <= 35:
+                detected_fps = 30
+            elif estimated_fps <= 65:
+                detected_fps = 60
+            elif estimated_fps <= 95:
+                detected_fps = 90
+            elif estimated_fps <= 125:
+                detected_fps = 120
+            else:
+                detected_fps = int(estimated_fps)
+        else:
+            detected_fps = 60  # Default fallback
+        
+        # Create shadow table
+        shadow_table = pd.DataFrame({
+            'Frame': range(1, len(data) + 1),
+            'Time': (data.index / detected_fps / 60).round(4),  # Convert frame to minutes
+            'FPS': data['FPS'].round(1),
+            'CPU%': data['CPU'].round(1)
+        })
+        
+        return shadow_table, detected_fps
+    
     def export_processed_data(self, game_title):
         """Export processed data to CSV"""
         data = self.processed_data if self.processed_data is not None else self.original_data
@@ -343,6 +383,24 @@ class GamingPerformanceAnalyzer:
             st.success(f"✅ **Export ready**: {len(export_data)} rows")
         
         return csv_content, filename
+    
+    def export_shadow_table(self, game_title):
+        """Export shadow table for video chart creation"""
+        shadow_table, detected_fps = self.create_shadow_table()
+        
+        if shadow_table is None:
+            return None, None, None
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        shadow_table.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{game_title.replace(' ', '_')}_video_chart_{timestamp}.csv"
+        
+        return csv_content, filename, detected_fps
 
 def main():
     # Custom CSS
@@ -519,11 +577,33 @@ def main():
                     use_container_width=True
                 )
             
-            # Data export
+            # Shadow table preview and export
+            shadow_table, detected_fps = analyzer.create_shadow_table()
+            if shadow_table is not None:
+                st.subheader("🎬 Video Chart Table")
+                st.info(f"📹 **Detected Frame Rate**: {detected_fps} FPS")
+                
+                # Show preview
+                with st.expander("👀 Preview Video Chart Data (First 10 rows)"):
+                    st.dataframe(shadow_table.head(10), use_container_width=True)
+                
+                # Export shadow table
+                shadow_csv, shadow_filename, _ = analyzer.export_shadow_table(game_title)
+                if shadow_csv:
+                    st.download_button(
+                        label="🎬 Download Video Chart CSV",
+                        data=shadow_csv,
+                        file_name=shadow_filename,
+                        mime="text/csv",
+                        use_container_width=True,
+                        help="Perfect for creating animated video charts"
+                    )
+            
+            # Regular data export
             csv_content, csv_filename = analyzer.export_processed_data(game_title)
             if csv_content:
                 st.download_button(
-                    label="📄 Download Data",
+                    label="📄 Download Processed Data",
                     data=csv_content,
                     file_name=csv_filename,
                     mime="text/csv",
@@ -566,13 +646,39 @@ def main():
         - Fastest chart generation
         - Maximum accuracy to source data
         """)
+    
+    with st.expander("🎬 Video Chart Table"):
+        st.markdown("""
+        **Video Chart CSV Features:**
+        - **Frame Column**: Sequential frame numbers (1, 2, 3...)
+        - **Time Column**: Frame converted to minutes based on detected FPS
+        - **FPS Column**: Raw FPS data from your CSV
+        - **CPU% Column**: Raw CPU usage data from your CSV
+        
+        **Frame Rate Detection:**
+        - **Auto-detects** from your data frequency
+        - **Common rates**: 30, 60, 90, 120 FPS
+        - **Perfect for**: After Effects, Premiere Pro, DaVinci Resolve
+        
+        **Use Cases:**
+        - 🎥 **Animated Charts**: Frame-by-frame data progression
+        - 📊 **Video Presentations**: Time-synced performance data
+        - 🎬 **Content Creation**: Professional gaming analysis videos
+        - 📈 **Social Media**: Engaging performance visualizations
+        
+        **Workflow:**
+        1. Upload your gaming CSV
+        2. Download Video Chart CSV
+        3. Import to your video editor
+        4. Create animated performance charts
+        """)
 
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #888; padding: 1rem;">
-        🎮 Gaming Performance Analyzer v3.0 - Simplified<br>
-        <small>📊 Raw Data Focus • 🚫 Outlier Removal • 📈 Performance Analytics</small>
+        🎮 Gaming Performance Analyzer v3.1 - Video Chart Ready<br>
+        <small>📊 Raw Data Focus • 🎬 Video Chart Export • 📈 Performance Analytics</small>
     </div>
     """, unsafe_allow_html=True)
 
