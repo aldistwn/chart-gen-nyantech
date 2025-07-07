@@ -180,7 +180,7 @@ class GamingPerformanceAnalyzer:
         return True
     
     def apply_smoothing(self, fps_smooth=False, cpu_smooth=False, fps_window=7, cpu_window=7):
-        """Apply Savitzky-Golay smoothing with STRICT data integrity"""
+        """Apply Savitzky-Golay smoothing ONLY to CPU data - FPS always stays raw"""
         # Safety check - ensure we have data to work with
         if self.original_data is None:
             st.error("❌ No original data available for smoothing")
@@ -194,58 +194,14 @@ class GamingPerformanceAnalyzer:
         
         data_length = len(self.processed_data)
         
-        # CRITICAL: When smoothing is OFF, use EXACT original data
-        if not fps_smooth and not cpu_smooth:
-            # Create exact copy with no modifications
-            self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
-            self.processed_data['CPU_Smooth'] = self.processed_data['CPU'].copy()
-            
-            if self.debug_mode:
-                st.write("📊 **No smoothing applied - using pure raw CSV data**")
-                st.write(f"   - FPS range maintained: {self.processed_data['FPS_Smooth'].min():.1f} - {self.processed_data['FPS_Smooth'].max():.1f}")
-            
-            st.info("📊 Smoothing disabled - displaying raw CSV data exactly as imported")
-            return True
+        # CRITICAL: FPS is ALWAYS raw - no smoothing ever applied
+        self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
         
-        # FPS Smoothing (only if enabled)
-        if fps_smooth and data_length >= 5:
-            window = min(max(fps_window, 5), data_length)
-            if window % 2 == 0:
-                window -= 1
-            
-            try:
-                original_fps = self.processed_data['FPS'].copy()
-                
-                if self.debug_mode:
-                    st.write(f"🔍 **FPS Smoothing - Input**: range {original_fps.min():.1f} - {original_fps.max():.1f}")
-                
-                smoothed_fps = savgol_filter(
-                    original_fps, 
-                    window_length=window, 
-                    polyorder=min(2, window-1)
-                )
-                
-                # Prevent overshoot - CRITICAL for data integrity
-                original_min, original_max = original_fps.min(), original_fps.max()
-                smoothed_fps = np.clip(smoothed_fps, original_min, original_max)
-                
-                self.processed_data['FPS_Smooth'] = smoothed_fps
-                
-                if self.debug_mode:
-                    st.write(f"🔍 **FPS Smoothing - Output**: range {smoothed_fps.min():.1f} - {smoothed_fps.max():.1f}")
-                
-                st.success(f"✅ FPS smoothed (window: {window}, preserved range: {original_min:.1f}-{original_max:.1f})")
-                
-            except Exception as e:
-                self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
-                st.warning(f"⚠️ FPS smoothing failed: {str(e)}, using original data")
-        else:
-            # When FPS smoothing is OFF, use exact original data
-            self.processed_data['FPS_Smooth'] = self.processed_data['FPS'].copy()
-            if not fps_smooth:
-                st.info("📊 FPS smoothing disabled - using raw CSV data")
+        if self.debug_mode:
+            st.write("🎯 **FPS Policy**: Always using raw FPS data (no smoothing applied)")
+            st.write(f"   - FPS range preserved: {self.processed_data['FPS_Smooth'].min():.1f} - {self.processed_data['FPS_Smooth'].max():.1f}")
         
-        # CPU Smoothing (only if enabled)
+        # CPU Smoothing (only CPU can be smoothed)
         if cpu_smooth and data_length >= 5:
             window = min(max(cpu_window, 5), data_length)
             if window % 2 == 0:
@@ -292,13 +248,15 @@ class GamingPerformanceAnalyzer:
             st.write(f"🔍 **Final integrity check**:")
             st.write(f"   - Original FPS range: {original_fps_min:.1f} - {original_fps_max:.1f}")
             st.write(f"   - Final FPS range: {final_fps_min:.1f} - {final_fps_max:.1f}")
+            st.write(f"   - FPS identical to original: {np.array_equal(self.processed_data['FPS_Smooth'], self.processed_data['FPS'])}")
             
-            if final_fps_max > original_fps_max + 0.1 or final_fps_min < original_fps_min - 0.1:
-                st.error("🚨 **DATA INTEGRITY VIOLATION DETECTED!**")
-                st.error("**Smoothing has created impossible values!**")
+            # FPS should ALWAYS be identical to original
+            if not np.array_equal(self.processed_data['FPS_Smooth'], self.processed_data['FPS']):
+                st.error("🚨 **FPS DATA INTEGRITY VIOLATION!**")
+                st.error("**FPS has been modified when it should stay raw!**")
                 return False
             else:
-                st.success("✅ **Data integrity preserved**")
+                st.success("✅ **FPS data integrity preserved (raw data maintained)**")
         
         return True
     
@@ -859,19 +817,16 @@ def main():
                 else:
                     outlier_threshold = 1.5
             
-            # Smoothing
-            col1, col2 = st.columns(2)
-            with col1:
-                fps_smooth = st.toggle("🎯 FPS Smoothing", value=False)
-                if fps_smooth:
-                    fps_window = st.slider("FPS Window", 3, 51, 7, step=2, 
-                                         help="Larger window = smoother line")
+            # CPU Smoothing only (FPS smoothing disabled)
+            st.info("🎯 **FPS Smoothing**: Disabled by design - FPS chart will always show raw data")
+            cpu_smooth = st.toggle("🖥️ CPU Smoothing", value=False)
+            if cpu_smooth:
+                cpu_window = st.slider("CPU Window", 3, 51, 7, step=2,
+                                     help="Larger window = smoother CPU line")
             
-            with col2:
-                cpu_smooth = st.toggle("🖥️ CPU Smoothing", value=False)
-                if cpu_smooth:
-                    cpu_window = st.slider("CPU Window", 3, 51, 7, step=2,
-                                         help="Larger window = smoother line")
+            # Set FPS smoothing to always disabled
+            fps_smooth = False
+            fps_window = 7
         else:
             # Set all processing to disabled when Savgol is off
             enable_outlier_removal = False
@@ -914,11 +869,11 @@ def main():
                             cpu_window = cpu_window if cpu_smooth else 7
                             
                             # Show processing status
-                            if fps_smooth or cpu_smooth:
-                                with st.spinner('🔧 Applying Savgol smoothing filters...'):
-                                    success = analyzer.apply_smoothing(fps_smooth, cpu_smooth, fps_window, cpu_window)
+                            if cpu_smooth:
+                                with st.spinner('🔧 Applying CPU smoothing (FPS stays raw)...'):
+                                    success = analyzer.apply_smoothing(False, cpu_smooth, fps_window, cpu_window)
                             else:
-                                with st.spinner('📊 Preparing processed data (no smoothing)...'):
+                                with st.spinner('📊 Preparing data (no smoothing applied)...'):
                                     success = analyzer.apply_smoothing(False, False, fps_window, cpu_window)
                             
                             if not success:
@@ -956,11 +911,11 @@ def main():
                                 
                                 # Add mode indicator with validation status
                                 if enable_savgol:
-                                    processing_status = "🔬 **Savgol Processing Enabled**"
-                                    if enable_outlier_removal or fps_smooth or cpu_smooth:
-                                        processing_status += " (with filters applied)"
+                                    processing_status = "🔬 **Savgol Processing Enabled** (CPU only)"
+                                    if enable_outlier_removal or cpu_smooth:
+                                        processing_status += " - Filters applied to CPU"
                                     else:
-                                        processing_status += " (ready for filtering)"
+                                        processing_status += " - Ready for CPU filtering"
                                 else:
                                     processing_status = "📊 **Raw CSV Mode** - Pure data from file"
                                 
@@ -1087,8 +1042,8 @@ def main():
         
         **What Triggers Differences:**
         - 🚫 **Outlier Removal**: Reduces data point count
-        - 🎯 **Smoothing**: Changes FPS/CPU values slightly
-        - 🔬 **Savgol Processing**: Applies mathematical filters
+        - 🖥️ **CPU Smoothing**: Changes CPU values slightly (FPS always stays raw)
+        - 🔬 **Savgol Processing**: Applies mathematical filters to CPU only
         
         **Benefits:**
         - 🛡️ **Data Integrity**: Ensures no unexpected modifications
@@ -1100,8 +1055,10 @@ def main():
     with st.expander("🎛️ Universal Processing Control"):
         st.markdown("""
         **🔬 Savgol Processing Toggle:**
-        - **ENABLED**: Full processing pipeline available (outlier removal, smoothing)
+        - **ENABLED**: Processing pipeline available (outlier removal, CPU smoothing only)
         - **DISABLED**: Pure raw CSV mode - no processing, just direct chart from file data
+        
+        **⚠️ Important: FPS Smoothing is permanently disabled by design**
         
         **Raw CSV Mode Benefits:**
         - ✅ **Zero Processing**: Exactly what's in your CSV file
@@ -1110,9 +1067,9 @@ def main():
         - ✅ **Transparency**: What you see is exactly what you uploaded
         
         **Savgol Processing Mode Benefits:**
-        - 🔧 **Outlier Removal**: Clean up bad data points
-        - 🎯 **Smoothing**: Reduce noise while preserving trends
-        - 📊 **Advanced Analytics**: More processing options
+        - 🚫 **Outlier Removal**: Clean up bad data points
+        - 🖥️ **CPU Smoothing Only**: Reduce CPU noise while keeping FPS raw
+        - 📊 **Selective Processing**: FPS stays untouched, CPU can be filtered
         - 🛡️ **Data Integrity**: Built-in validation and safety checks
         """)
     
@@ -1145,11 +1102,11 @@ def main():
         - **Z-Score**: Remove values beyond Z standard deviations
         
         **Smoothing Filter:**
-        - **Savitzky-Golay**: Preserves peaks while reducing noise
-        - **Window Size**: 3-51 points (larger = smoother, smaller = more detail)
+        - **CPU Smoothing Only**: Savitzky-Golay filter applied only to CPU usage
+        - **FPS Always Raw**: FPS data never gets smoothed - always shows original values
+        - **Window Size**: 3-51 points for CPU smoothing (larger = smoother)
         - **When disabled**: Shows pure raw CSV data without any processing
-        - **Applied separately** to FPS and CPU data
-        - **Data integrity**: Ensures smoothed values never exceed original range
+        - **Data integrity**: Ensures CPU smoothed values stay within 0-100%
         """)
     
     with st.expander("🛡️ Data Integrity Features"):
@@ -1173,8 +1130,8 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #888; padding: 1rem;">
-        🎮 Gaming Performance Analyzer v2.2 - Data Validation<br>
-        <small>🔍 Pre-Chart Validation • 🔬 Savgol Processing • 📊 Raw CSV Mode • 🛡️ Data Integrity</small>
+        🎮 Gaming Performance Analyzer v2.3 - FPS Raw Policy<br>
+        <small>🎯 FPS Always Raw • 🖥️ CPU Smoothing Only • 🔍 Data Validation • 🛡️ Data Integrity</small>
     </div>
     """, unsafe_allow_html=True)
 
