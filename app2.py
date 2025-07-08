@@ -522,6 +522,20 @@ def main():
         game_settings = st.text_input("⚙️ Graphics Settings", value="Ultra - 120 FPS")
         game_mode = st.text_input("🚀 Performance Mode", value="Game Boost Mode")
         smartphone_name = st.text_input("📱 Device Model", value="iPhone 15 Pro Max")
+        
+        st.divider()
+        
+        st.header("🔧 Quick Data Processing")
+        
+        enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
+        if enable_outlier_removal:
+            outlier_method = st.selectbox("Method", ['percentile', 'iqr', 'zscore'])
+            if outlier_method == 'percentile':
+                outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1)
+            elif outlier_method == 'zscore':
+                outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1)
+            else:
+                outlier_threshold = 1.5
     
     # Main content
     col1, col2 = st.columns([2, 1])
