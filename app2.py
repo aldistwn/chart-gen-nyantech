@@ -587,11 +587,13 @@ def main():
                                         chart_config[f'{col}_color'] = st.color_picker(
                                             f"{col_display[:10]}...", 
                                             suggested_color,
+                                            key=f"color_{col}_{i}",
                                             help=f"Color for {col_display}"
                                         )
                                         chart_config[f'hide_{col}'] = st.checkbox(
                                             f"Hide {col_display[:15]}...",
                                             value=False,
+                                            key=f"hide_{col}_{i}",
                                             help=f"Hide {col_display} from chart"
                                         )
                             
