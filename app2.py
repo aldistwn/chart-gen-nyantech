@@ -312,10 +312,10 @@ class GamingPerformanceAnalyzer:
                 ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
                 ax.tick_params(axis='y', colors='white', labelsize=10)
                 
-                # Set appropriate limits
-                data_min, data_max = col_data.min(), col_data.max()
-                padding = (data_max - data_min) * 0.1
-                ax.set_ylim(max(0, data_min - padding), data_max + padding)
+                # Set appropriate limits with 0 as minimum
+                data_max = col_data.max()
+                padding = data_max * 0.1
+                ax.set_ylim(0, data_max + padding)
                 
                 colors_used.append((col_display, col_color))
             
