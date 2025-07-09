@@ -186,6 +186,10 @@ class GamingPerformanceAnalyzer:
         
         if self.debug_mode:
             st.write(f"🔍 **Outlier removal - Before**: {original_count} rows")
+            for col in target_columns:
+                if col in data.columns:
+                    col_data = data[col]
+                    st.write(f"   - {col}: {col_data.min():.1f} to {col_data.max():.1f} (avg: {col_data.mean():.1f})")
         
         # Apply outlier removal to each specified column
         combined_mask = pd.Series([True] * len(data))
@@ -212,7 +216,12 @@ class GamingPerformanceAnalyzer:
                 z_scores = np.abs((col_data - col_data.mean()) / col_data.std())
                 keep_mask = z_scores <= threshold
             
+            # Combine masks (AND operation - must pass all column filters)
             combined_mask = combined_mask & keep_mask
+            
+            if self.debug_mode:
+                removed_by_this_col = (~keep_mask).sum()
+                st.write(f"   - {col}: removed {removed_by_this_col} outliers")
         
         # Apply combined mask
         self.processed_data = data[combined_mask].copy().reset_index(drop=True)
@@ -226,8 +235,26 @@ class GamingPerformanceAnalyzer:
         
         if self.debug_mode:
             st.write(f"🔍 **Outlier removal - After**: {len(self.processed_data)} rows")
+            for col in target_columns:
+                if col in self.processed_data.columns:
+                    col_data = self.processed_data[col]
+                    st.write(f"   - {col}: {col_data.min():.1f} to {col_data.max():.1f} (avg: {col_data.mean():.1f})")
         
-        st.info(f"🚫 Removed {removed_count} outliers ({removal_pct:.1f}%) using {method} method on {len(target_columns)} columns")
+        st.success(f"✅ Removed {removed_count} outliers ({removal_pct:.1f}%) using {method} method on {len(target_columns)} columns")
+        
+        # Show before/after comparison for key metrics
+        if any('fps' in col.lower() for col in target_columns):
+            fps_cols = [col for col in target_columns if 'fps' in col.lower()]
+            if fps_cols:
+                fps_col = fps_cols[0]
+                original_fps = data[fps_col]
+                processed_fps = self.processed_data[fps_col]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("📊 Original FPS Range", f"{original_fps.min():.0f} - {original_fps.max():.0f}")
+                with col2:
+                    st.metric("🔧 Processed FPS Range", f"{processed_fps.min():.0f} - {processed_fps.max():.0f}")
         
         return True
     
@@ -616,30 +643,43 @@ def main():
                         if selected_columns:
                             # Data Processing Options
                             with st.expander("🔧 Advanced Processing Options"):
-                                enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
-                                if enable_outlier_removal:
-                                    outlier_method = st.selectbox("Method", ['percentile', 'iqr', 'zscore'])
+                                enable_advanced_outlier = st.toggle("🚫 Advanced Outlier Removal", value=False, key="advanced_outlier")
+                                if enable_advanced_outlier:
+                                    advanced_outlier_method = st.selectbox("Advanced Method", ['percentile', 'iqr', 'zscore'], key="advanced_method")
                                     
                                     # Select columns for outlier removal
                                     outlier_columns = st.multiselect(
                                         "Apply outlier removal to:",
                                         selected_columns,
                                         default=selected_columns,
-                                        help="Choose which metrics to apply outlier removal"
+                                        help="Choose which metrics to apply outlier removal",
+                                        key="outlier_columns_select"
                                     )
                                     
-                                    if outlier_method == 'percentile':
-                                        outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1)
-                                    elif outlier_method == 'zscore':
-                                        outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1)
+                                    if advanced_outlier_method == 'percentile':
+                                        advanced_outlier_threshold = st.slider("Advanced Bottom Percentile", 0.1, 10.0, 2.0, 0.1, key="advanced_threshold")
+                                    elif advanced_outlier_method == 'zscore':
+                                        advanced_outlier_threshold = st.slider("Advanced Z-Score Threshold", 1.0, 4.0, 2.5, 0.1, key="advanced_zscore")
                                     else:
-                                        outlier_threshold = 1.5
+                                        advanced_outlier_threshold = 1.5
                             
                             # Process data
-                            if enable_outlier_removal and 'outlier_columns' in locals():
-                                with st.spinner('🔧 Removing outliers...'):
-                                    analyzer.remove_outliers(outlier_method, outlier_threshold, outlier_columns)
-                            else:
+                            processed = False
+                            
+                            # Priority 1: Advanced outlier removal (if enabled)
+                            if 'enable_advanced_outlier' in locals() and enable_advanced_outlier and 'outlier_columns' in locals():
+                                with st.spinner('🔧 Applying advanced outlier removal...'):
+                                    analyzer.remove_outliers(advanced_outlier_method, advanced_outlier_threshold, outlier_columns)
+                                    processed = True
+                            
+                            # Priority 2: Quick outlier removal from sidebar (if enabled and no advanced processing)
+                            elif enable_outlier_removal and not processed:
+                                with st.spinner('🔧 Removing outliers from sidebar settings...'):
+                                    analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns)
+                                    processed = True
+                            
+                            # Default: Use raw data
+                            if not processed:
                                 analyzer.processed_data = analyzer.original_data.copy()
                                 st.info("📊 **Raw Mode**: Using original data without processing")
                             
