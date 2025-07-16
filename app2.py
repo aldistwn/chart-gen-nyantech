@@ -668,13 +668,6 @@ def main():
         border-radius: 10px;
         border-left: 4px solid #667eea;
     }
-    .column-selector {
-        background: #1E1E1E;
-        padding: 1rem;
-        border-radius: 8px;
-        border: 1px solid #333;
-        margin-bottom: 1rem;
-    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -682,7 +675,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🎮 Gaming Performance Analyzer</h1>
-        <p>Dynamic multi-metric gaming chart generator with comparison mode</p>
+        <p>FPS and CPU focused gaming performance analysis</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -701,7 +694,7 @@ def main():
         st.markdown("""
         <div class="comparison-header">
             <h2>🆚 CSV Comparison Mode</h2>
-            <p>Compare performance between two different datasets</p>
+            <p>Compare FPS and CPU performance between two devices</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -761,164 +754,141 @@ def main():
             if common_columns:
                 st.success(f"✅ Both datasets loaded! Found {len(common_columns)} common metrics for comparison")
                 
-                # Column selection for comparison
-                st.subheader("📊 Select Metrics for Comparison")
+                # Simplified comparison - no column selection, just use FPS and CPU
+                st.subheader("📊 Performance Comparison")
+                st.info("🎯 **Focus Mode**: Automatically compares FPS and CPU Usage between devices")
                 
-                selected_columns = st.multiselect(
-                    "Choose common metrics to compare:",
-                    common_columns,
-                    default=common_columns[:3] if len(common_columns) >= 3 else common_columns,
-                    help="Only columns present in both datasets can be compared"
-                )
-                
-                if selected_columns:
-                    # Outlier removal options
-                    with st.expander("🔧 Data Processing Options"):
-                        process_dataset1 = st.checkbox("🚫 Remove outliers from Dataset 1", key="outlier1")
-                        process_dataset2 = st.checkbox("🚫 Remove outliers from Dataset 2", key="outlier2")
-                        
-                        if process_dataset1 or process_dataset2:
-                            outlier_method = st.selectbox("Outlier Method", ['percentile', 'iqr', 'zscore'], key="outlier_method_comp")
-                            if outlier_method == 'percentile':
-                                outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1, key="outlier_threshold_comp")
-                            elif outlier_method == 'zscore':
-                                outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1, key="outlier_zscore_comp")
-                            else:
-                                outlier_threshold = 1.5
+                # Outlier removal options
+                with st.expander("🔧 Data Processing Options"):
+                    process_dataset1 = st.checkbox("🚫 Remove outliers from Dataset 1", key="outlier1")
+                    process_dataset2 = st.checkbox("🚫 Remove outliers from Dataset 2", key="outlier2")
                     
-                    # Process datasets
-                    if process_dataset1:
-                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 1)
-                    else:
-                        analyzer.processed_data = analyzer.original_data.copy()
-                    
-                    if process_dataset2:
-                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 2)
-                    else:
-                        analyzer.processed_data_2 = analyzer.original_data_2.copy()
-                    
-                    # Create comparison chart
-                    st.subheader("📊 Performance Comparison Chart")
-                    
-                    chart_config = {
-                        'game_title': game_title,
-                        'game_settings': game_settings,
-                        'device_name_1': device_name_1,
-                        'device_name_2': device_name_2,
-                        'selected_columns': selected_columns
-                    }
-                    
-                    # Add color configurations for each dataset
-                    color_cols = st.columns(len(selected_columns))
-                    for i, col in enumerate(selected_columns):
-                        col_display = analyzer.get_column_display_name(col)
-                        
-                        with color_cols[i]:
-                            chart_config[f'{col}_color_1'] = st.color_picker(
-                                f"{col_display[:8]}... D1", 
-                                analyzer.get_column_color_suggestion(col, 1),
-                                key=f"color_{col}_1",
-                                help=f"Color for {col_display} - Dataset 1"
-                            )
-                            chart_config[f'{col}_color_2'] = st.color_picker(
-                                f"{col_display[:8]}... D2", 
-                                analyzer.get_column_color_suggestion(col, 2),
-                                key=f"color_{col}_2",
-                                help=f"Color for {col_display} - Dataset 2"
-                            )
-                    
-                    with st.spinner('🎨 Generating comparison chart...'):
-                        chart_fig = analyzer.create_comparison_chart(chart_config)
-                        
-                        if chart_fig:
-                            st.pyplot(chart_fig, use_container_width=True)
-                            
-                            # Export comparison chart
-                            img_buffer = io.BytesIO()
-                            chart_fig.savefig(img_buffer, format='png', dpi=300, 
-                                            bbox_inches='tight', facecolor='#0E1117')
-                            img_buffer.seek(0)
-                            
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            png_filename = f"comparison_{device_name_1.replace(' ', '_')}_vs_{device_name_2.replace(' ', '_')}_{timestamp}.png"
-                            
-                            st.download_button(
-                                label="📸 Download Comparison Chart",
-                                data=img_buffer.getvalue(),
-                                file_name=png_filename,
-                                mime="image/png",
-                                use_container_width=True
-                            )
+                    if process_dataset1 or process_dataset2:
+                        outlier_method = st.selectbox("Outlier Method", ['percentile', 'iqr', 'zscore'], key="outlier_method_comp")
+                        if outlier_method == 'percentile':
+                            outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1, key="outlier_threshold_comp")
+                        elif outlier_method == 'zscore':
+                            outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1, key="outlier_zscore_comp")
                         else:
-                            st.error("Failed to generate comparison chart")
-                    
-                    # Comparison Statistics
-                    st.subheader("📈 Performance Comparison Statistics")
-                    
-                    stats = analyzer.get_comparison_stats(selected_columns)
-                    
-                    # Create comparison metrics
-                    for col in selected_columns:
-                        if f'{col}_avg_1' in stats and f'{col}_avg_2' in stats:
-                            col_display = stats.get(f'{col}_display', analyzer.get_column_display_name(col))
-                            
-                            st.write(f"**{col_display} Comparison:**")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.metric(
-                                    f"📱 {device_name_1}", 
-                                    f"{stats[f'{col}_avg_1']:.1f}",
-                                    help=f"Average {col_display} for {device_name_1}"
-                                )
-                            
-                            with col2:
-                                st.metric(
-                                    f"📱 {device_name_2}", 
-                                    f"{stats[f'{col}_avg_2']:.1f}",
-                                    help=f"Average {col_display} for {device_name_2}"
-                                )
-                            
-                            with col3:
-                                if f'{col}_improvement' in stats:
-                                    improvement = stats[f'{col}_improvement']
-                                    delta_color = "normal" if abs(improvement) < 5 else ("inverse" if improvement < 0 else "normal")
-                                    
-                                    st.metric(
-                                        "📊 Difference", 
-                                        f"{improvement:+.1f}%",
-                                        delta=f"{improvement:+.1f}%",
-                                        delta_color=delta_color,
-                                        help=f"Performance difference: Dataset 2 vs Dataset 1"
-                                    )
-                            
-                            st.divider()
-                    
-                    # Summary insights
-                    if any('fps' in col.lower() for col in selected_columns):
-                        fps_cols = [col for col in selected_columns if 'fps' in col.lower()]
-                        if fps_cols:
-                            fps_col = fps_cols[0]
-                            fps_avg_1 = stats.get(f'{fps_col}_avg_1', 0)
-                            fps_avg_2 = stats.get(f'{fps_col}_avg_2', 0)
-                            
-                            if fps_avg_1 > 0 and fps_avg_2 > 0:
-                                winner = device_name_1 if fps_avg_1 > fps_avg_2 else device_name_2
-                                winner_fps = max(fps_avg_1, fps_avg_2)
-                                loser_fps = min(fps_avg_1, fps_avg_2)
-                                fps_advantage = ((winner_fps - loser_fps) / loser_fps) * 100
-                                
-                                st.markdown(f"""
-                                <div style="text-align: center; padding: 1rem; background: linear-gradient(45deg, #667eea, #764ba2); 
-                                            border-radius: 10px; margin: 1rem 0;">
-                                    <h3 style="color: white; margin: 0;">🏆 FPS Winner: {winner}</h3>
-                                    <p style="color: white; margin: 0;">{fps_advantage:.1f}% better average FPS performance</p>
-                                </div>
-                                """, unsafe_allow_html=True)
+                            outlier_threshold = 1.5
                 
+                # Process datasets
+                if process_dataset1:
+                    analyzer.remove_outliers(outlier_method, outlier_threshold, common_columns, 1)
                 else:
-                    st.warning("⚠️ Please select at least one metric for comparison")
+                    analyzer.processed_data = analyzer.original_data.copy()
+                
+                if process_dataset2:
+                    analyzer.remove_outliers(outlier_method, outlier_threshold, common_columns, 2)
+                else:
+                    analyzer.processed_data_2 = analyzer.original_data_2.copy()
+                
+                # Create comparison chart
+                st.subheader("📊 Performance Comparison Chart")
+                
+                chart_config = {
+                    'game_title': game_title,
+                    'game_settings': game_settings,
+                    'device_name_1': device_name_1,
+                    'device_name_2': device_name_2
+                }
+                
+                with st.spinner('🎨 Generating FPS vs CPU comparison chart...'):
+                    chart_fig = analyzer.create_comparison_chart(chart_config)
+                    
+                    if chart_fig:
+                        st.pyplot(chart_fig, use_container_width=True)
+                        
+                        # Export comparison chart
+                        img_buffer = io.BytesIO()
+                        chart_fig.savefig(img_buffer, format='png', dpi=300, 
+                                        bbox_inches='tight', facecolor='#0E1117')
+                        img_buffer.seek(0)
+                        
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        png_filename = f"comparison_{device_name_1.replace(' ', '_')}_vs_{device_name_2.replace(' ', '_')}_{timestamp}.png"
+                        
+                        st.download_button(
+                            label="📸 Download Comparison Chart",
+                            data=img_buffer.getvalue(),
+                            file_name=png_filename,
+                            mime="image/png",
+                            use_container_width=True
+                        )
+                    else:
+                        st.error("Failed to generate comparison chart")
+                
+                # Simplified Comparison Statistics - Focus on FPS and CPU
+                st.subheader("📈 Performance Comparison Statistics")
+                
+                # Find FPS and CPU columns
+                fps_col = None
+                cpu_col = None
+                for col in common_columns:
+                    if 'fps' in col.lower() and fps_col is None:
+                        fps_col = col
+                    elif 'cpu' in col.lower() and cpu_col is None:
+                        cpu_col = col
+                
+                selected_columns_for_stats = [col for col in [fps_col, cpu_col] if col is not None]
+                stats = analyzer.get_comparison_stats(selected_columns_for_stats)
+                
+                # Create comparison metrics for FPS and CPU only
+                for col in selected_columns_for_stats:
+                    if f'{col}_avg_1' in stats and f'{col}_avg_2' in stats:
+                        col_display = stats.get(f'{col}_display', analyzer.get_column_display_name(col))
+                        
+                        st.write(f"**{col_display} Comparison:**")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric(
+                                f"📱 {device_name_1}", 
+                                f"{stats[f'{col}_avg_1']:.1f}",
+                                help=f"Average {col_display} for {device_name_1}"
+                            )
+                        
+                        with col2:
+                            st.metric(
+                                f"📱 {device_name_2}", 
+                                f"{stats[f'{col}_avg_2']:.1f}",
+                                help=f"Average {col_display} for {device_name_2}"
+                            )
+                        
+                        with col3:
+                            if f'{col}_improvement' in stats:
+                                improvement = stats[f'{col}_improvement']
+                                delta_color = "normal" if abs(improvement) < 5 else ("inverse" if improvement < 0 else "normal")
+                                
+                                st.metric(
+                                    "📊 Difference", 
+                                    f"{improvement:+.1f}%",
+                                    delta=f"{improvement:+.1f}%",
+                                    delta_color=delta_color,
+                                    help=f"Performance difference: Dataset 2 vs Dataset 1"
+                                )
+                        
+                        st.divider()
+                
+                # Summary insights for FPS
+                if fps_col and f'{fps_col}_avg_1' in stats and f'{fps_col}_avg_2' in stats:
+                    fps_avg_1 = stats[f'{fps_col}_avg_1']
+                    fps_avg_2 = stats[f'{fps_col}_avg_2']
+                    
+                    if fps_avg_1 > 0 and fps_avg_2 > 0:
+                        winner = device_name_1 if fps_avg_1 > fps_avg_2 else device_name_2
+                        winner_fps = max(fps_avg_1, fps_avg_2)
+                        loser_fps = min(fps_avg_1, fps_avg_2)
+                        fps_advantage = ((winner_fps - loser_fps) / loser_fps) * 100
+                        
+                        st.markdown(f"""
+                        <div style="text-align: center; padding: 1rem; background: linear-gradient(45deg, #667eea, #764ba2); 
+                                    border-radius: 10px; margin: 1rem 0;">
+                            <h3 style="color: white; margin: 0;">🏆 FPS Winner: {winner}</h3>
+                            <p style="color: white; margin: 0;">{fps_advantage:.1f}% better average FPS performance</p>
+                        </div>
+                        """, unsafe_allow_html=True)
             else:
                 st.error("❌ No common columns found between the two datasets")
         
@@ -974,7 +944,7 @@ def main():
                         
                         if analyzer.original_data is not None and analyzer.numeric_columns:
                             
-                            # Dynamic Column Selection - SIMPLIFIED TO FPS & CPU ONLY
+                            # Simplified to FPS & CPU only
                             st.subheader("📊 Gaming Performance Chart")
                             st.info("🎯 **Focus Mode**: Automatically displays FPS and CPU Usage for optimal gaming analysis")
                             
@@ -985,104 +955,71 @@ def main():
                                 'smartphone_name': smartphone_name
                             }
                             
-                            for i, col in enumerate(selected_columns):
-                                        col_display = analyzer.get_column_display_name(col)
-                                        suggested_color = analyzer.get_column_color_suggestion(col, 1)
-                                        
-                                        with color_cols[i % 4]:
-                                            chart_config[f'{col}_color'] = st.color_picker(
-                                                f"{col_display[:10]}...", 
-                                                suggested_color,
-                                                key=f"color_{col}_{i}",
-                                                help=f"Color for {col_display}"
-                                            )
-                                            chart_config[f'hide_{col}'] = st.checkbox(
-                                                f"Hide {col_display[:15]}...",
-                                                value=False,
-                                                key=f"hide_{col}_{i}",
-                                                help=f"Hide {col_display} from chart"
-                                            )
-                                
-                                st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            if selected_columns:
-                                # Data Processing Options
-                                with st.expander("🔧 Advanced Processing Options"):
-                                    enable_advanced_outlier = st.toggle("🚫 Advanced Outlier Removal", value=False, key="advanced_outlier")
-                                    if enable_advanced_outlier:
-                                        advanced_outlier_method = st.selectbox("Advanced Method", ['percentile', 'iqr', 'zscore'], key="advanced_method")
-                                        
-                                        # Select columns for outlier removal
-                                        outlier_columns = st.multiselect(
-                                            "Apply outlier removal to:",
-                                            selected_columns,
-                                            default=selected_columns,
-                                            help="Choose which metrics to apply outlier removal",
-                                            key="outlier_columns_select"
-                                        )
-                                        
-                                        if advanced_outlier_method == 'percentile':
-                                            advanced_outlier_threshold = st.slider("Advanced Bottom Percentile", 0.1, 10.0, 2.0, 0.1, key="advanced_threshold")
-                                        elif advanced_outlier_method == 'zscore':
-                                            advanced_outlier_threshold = st.slider("Advanced Z-Score Threshold", 1.0, 4.0, 2.5, 0.1, key="advanced_zscore")
-                                        else:
-                                            advanced_outlier_threshold = 1.5
-                                
-                                # Process data
-                                processed = False
-                                
-                                # Priority 1: Advanced outlier removal (if enabled)
-                                if enable_advanced_outlier and outlier_columns:
-                                    with st.spinner('🔧 Applying advanced outlier removal...'):
-                                        analyzer.remove_outliers(advanced_outlier_method, advanced_outlier_threshold, outlier_columns, 1)
-                                        processed = True
-                                
-                                # Priority 2: Quick outlier removal from sidebar (if enabled and no advanced processing)
-                                elif enable_outlier_removal and not processed:
-                                    with st.spinner('🔧 Removing outliers from sidebar settings...'):
-                                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 1)
-                                        processed = True
-                                
-                                # Default: Use raw data
-                                if not processed:
-                                    analyzer.processed_data = analyzer.original_data.copy()
-                                    st.info("📊 **Raw Mode**: Using original data without processing")
-                                
-                                # Create chart (using single dataset method)
-                                st.subheader("📊 Performance Chart")
-                                
-                                with st.spinner('🎨 Generating dynamic chart...'):
-                                    chart_fig = analyzer.create_performance_chart(chart_config)
+                            # Data Processing Options
+                            with st.expander("🔧 Advanced Processing Options"):
+                                enable_advanced_outlier = st.toggle("🚫 Advanced Outlier Removal", value=False, key="advanced_outlier")
+                                if enable_advanced_outlier:
+                                    advanced_outlier_method = st.selectbox("Advanced Method", ['percentile', 'iqr', 'zscore'], key="advanced_method")
                                     
-                                    if chart_fig:
-                                        st.pyplot(chart_fig, use_container_width=True)
+                                    if advanced_outlier_method == 'percentile':
+                                        advanced_outlier_threshold = st.slider("Advanced Bottom Percentile", 0.1, 10.0, 2.0, 0.1, key="advanced_threshold")
+                                    elif advanced_outlier_method == 'zscore':
+                                        advanced_outlier_threshold = st.slider("Advanced Z-Score Threshold", 1.0, 4.0, 2.5, 0.1, key="advanced_zscore")
                                     else:
-                                        st.error("Failed to generate chart")
-                            else:
-                                st.warning("⚠️ Please select at least one metric to display")
+                                        advanced_outlier_threshold = 1.5
+                            
+                            # Process data
+                            processed = False
+                            
+                            # Priority 1: Advanced outlier removal (if enabled)
+                            if enable_advanced_outlier:
+                                with st.spinner('🔧 Applying advanced outlier removal...'):
+                                    analyzer.remove_outliers(advanced_outlier_method, advanced_outlier_threshold, analyzer.numeric_columns, 1)
+                                    processed = True
+                            
+                            # Priority 2: Quick outlier removal from sidebar (if enabled and no advanced processing)
+                            elif enable_outlier_removal and not processed:
+                                with st.spinner('🔧 Removing outliers from sidebar settings...'):
+                                    analyzer.remove_outliers(outlier_method, outlier_threshold, analyzer.numeric_columns, 1)
+                                    processed = True
+                            
+                            # Default: Use raw data
+                            if not processed:
+                                analyzer.processed_data = analyzer.original_data.copy()
+                                st.info("📊 **Raw Mode**: Using original data without processing")
+                            
+                            # Create chart
+                            st.subheader("📊 Performance Chart")
+                            
+                            with st.spinner('🎨 Generating FPS & CPU chart...'):
+                                chart_fig = analyzer.create_performance_chart(chart_config)
+                                
+                                if chart_fig:
+                                    st.pyplot(chart_fig, use_container_width=True)
+                                else:
+                                    st.error("Failed to generate chart")
         
         with col2:
             # Statistics panel (single dataset)
             if uploaded_file is not None and analyzer.original_data is not None:
                 st.subheader("📈 Performance Statistics")
                 
-                if 'selected_columns' in locals() and analyzer.original_data is not None:
-                    # Find FPS and CPU columns for stats
-                    fps_col = None
-                    cpu_col = None
-                    for col in analyzer.numeric_columns:
-                        if 'fps' in col.lower() and fps_col is None:
-                            fps_col = col
-                        elif 'cpu' in col.lower() and cpu_col is None:
-                            cpu_col = col
-                    
-                    available_columns = [col for col in [fps_col, cpu_col] if col is not None]
-                    
-                    if available_columns:
-                        stats = analyzer.get_performance_stats(available_columns)
+                # Find FPS and CPU columns for stats
+                fps_col = None
+                cpu_col = None
+                for col in analyzer.numeric_columns:
+                    if 'fps' in col.lower() and fps_col is None:
+                        fps_col = col
+                    elif 'cpu' in col.lower() and cpu_col is None:
+                        cpu_col = col
+                
+                available_columns = [col for col in [fps_col, cpu_col] if col is not None]
+                
+                if available_columns:
+                    stats = analyzer.get_performance_stats(available_columns)
                     
                     # Show grade if FPS is available
-                    if any('fps' in col.lower() for col in selected_columns) and 'grade' in stats:
+                    if fps_col and 'grade' in stats:
                         st.markdown(f"""
                         <div style="text-align: center; padding: 1rem; background: linear-gradient(45deg, #667eea, #764ba2); 
                                     border-radius: 10px; margin-bottom: 1rem;">
@@ -1091,8 +1028,8 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Display stats for each selected column
-                    for i, col in enumerate(selected_columns):
+                    # Display stats for each available column
+                    for col in available_columns:
                         if f'{col}_avg' in stats:
                             col_display = stats.get(f'{col}_display', analyzer.get_column_display_name(col))
                             
@@ -1140,60 +1077,42 @@ def main():
                             use_container_width=True
                         )
                 else:
-                    st.info("📊 Select metrics from the main panel to see statistics")
+                    st.info("📊 No FPS or CPU columns found for statistics")
             else:
                 st.info("📤 Upload CSV file to see performance statistics")
     
     # Documentation
-    with st.expander("📋 CSV Comparison Features"):
+    with st.expander("📋 How to Use"):
         st.markdown("""
-        **🆚 NEW: CSV Comparison Mode**
-        - **Side-by-side analysis**: Compare two different datasets
-        - **Common metrics**: Only columns present in both files
-        - **Visual comparison**: Solid vs dashed lines
-        - **Performance insights**: Automatic winner detection
-        - **Export options**: Save comparison charts
+        **🎯 Focus Mode Features:**
+        - **FPS Analysis**: Automatic detection and visualization of frame rates
+        - **CPU Monitoring**: CPU usage tracking with 80% threshold warning
+        - **Dual Y-Axis**: Clean separation of FPS (left) and CPU% (right)
+        - **Reference Lines**: 60 FPS and 30 FPS benchmarks for gaming
+        - **Performance Grading**: Automatic rating based on FPS performance
         
-        **🎯 Use Cases:**
-        - **Device comparison**: iPhone vs Android performance
-        - **Settings testing**: Ultra vs High graphics
-        - **Before/After**: Game optimization results
-        - **Hardware analysis**: Different SoC performance
-        - **Game versions**: Update impact analysis
+        **📊 Comparison Mode:**
+        - **Device vs Device**: Compare two different gaming setups
+        - **Solid vs Dashed**: Visual distinction between datasets
+        - **Winner Detection**: Automatic performance leader identification
+        - **Color Coding**: Bright colors for Dataset 1, darker for Dataset 2
         
-        **📊 Comparison Features:**
-        - **Percentage differences**: Clear improvement metrics
-        - **Winner detection**: Automatic best performer
-        - **Color coding**: Different shades per dataset
-        - **Line styles**: Solid (Dataset 1) vs Dashed (Dataset 2)
+        **🔧 Data Processing:**
+        - **Outlier Removal**: Clean data for better analysis
+        - **Multiple Methods**: Percentile, IQR, and Z-Score filtering
+        - **Debug Mode**: See what's happening with your data
+        
+        **💾 Export Options:**
+        - **High-Quality PNG**: 300 DPI charts ready for presentations
+        - **Timestamped Files**: Never overwrite your previous exports
         """)
     
-    with st.expander("🎨 Comparison Chart Guide"):
-        st.markdown("""
-        **🎯 Reading Comparison Charts:**
-        - **Solid lines**: First dataset (Device 1)
-        - **Dashed lines**: Second dataset (Device 2)
-        - **Higher is better**: FPS, Battery %
-        - **Lower is better**: CPU %, Temperature
-        
-        **🌈 Color Strategy:**
-        - **Bright colors**: First dataset
-        - **Darker shades**: Second dataset
-        - **Same metric family**: Similar color base
-        
-        **📊 Best Practices:**
-        - **Sync time ranges**: Ensure similar test duration
-        - **Same conditions**: Consistent game settings
-        - **Clean data**: Apply outlier removal consistently
-        - **Focus metrics**: Choose 2-4 key comparisons
-        """)
-
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #888; padding: 1rem;">
-        🎮 Gaming Performance Analyzer v5.0 - Comparison Edition<br>
-        <small>📊 Dynamic Columns • 🆚 CSV Comparison • 🎨 Multi-Axis Charts • 🎬 Video Export • 📈 Advanced Analytics</small>
+        🎮 Gaming Performance Analyzer v6.0 - Clean Edition<br>
+        <small>🎯 FPS & CPU Focus • 📊 Dual Y-Axis • 🆚 Device Comparison • 📈 Performance Grading</small>
     </div>
     """, unsafe_allow_html=True)
 
