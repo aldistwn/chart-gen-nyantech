@@ -983,7 +983,9 @@ def main():
                                 'game_settings': game_settings,
                                 'game_mode': game_mode,
                                 'smartphone_name': smartphone_name
-                            } enumerate(selected_columns):
+                            }
+                            
+                            for i, col in enumerate(selected_columns):
                                         col_display = analyzer.get_column_display_name(col)
                                         suggested_color = analyzer.get_column_color_suggestion(col, 1)
                                         
