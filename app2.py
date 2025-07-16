@@ -72,7 +72,6 @@ class GamingPerformanceAnalyzer:
         
         if self.debug_mode:
             st.write(f"🔍 **Debug Dataset {dataset_num} - All columns found**: {current_columns}")
-            st.write(f"📊 **Total rows in original CSV**: {len(df)}")
         
         # Convert all columns to numeric where possible and identify numeric columns
         processed_df = pd.DataFrame()
@@ -89,12 +88,7 @@ class GamingPerformanceAnalyzer:
                 processed_df[col] = numeric_data
                 numeric_cols.append(col)
                 if self.debug_mode:
-                    nan_count = numeric_data.isna().sum()
-                    negative_count = (numeric_data < 0).sum()
-                    st.write(f"✅ **Dataset {dataset_num} Numeric column**: `{col}`")
-                    st.write(f"   - Range: {numeric_data.min():.1f} - {numeric_data.max():.1f}")
-                    st.write(f"   - NaN values: {nan_count} ({nan_count/len(df)*100:.1f}%)")
-                    st.write(f"   - Negative values: {negative_count} ({negative_count/len(df)*100:.1f}%)")
+                    st.write(f"✅ **Dataset {dataset_num} Numeric column**: `{col}` (Range: {numeric_data.min():.1f} - {numeric_data.max():.1f})")
             else:
                 # Keep as text/categorical data
                 processed_df[col] = df[col]
@@ -108,79 +102,22 @@ class GamingPerformanceAnalyzer:
         # Set the appropriate attributes
         setattr(self, target_numeric_columns, numeric_cols)
         
-        # Create initial valid mask (all True)
-        valid_mask = pd.Series([True] * len(processed_df))
-        
-        # Track reasons for removal
-        removal_reasons = {
-            'all_nan': 0,
-            'negative_values': {},
-            'infinite_values': {},
-            'nan_values': {}
-        }
-        
-        # First check: Remove rows where ALL numeric columns are NaN
+        # Remove rows where ALL numeric columns are NaN
         numeric_data_only = processed_df[numeric_cols]
-        all_nan_mask = numeric_data_only.isna().all(axis=1)
-        removal_reasons['all_nan'] = all_nan_mask.sum()
-        valid_mask = valid_mask & ~all_nan_mask
+        valid_mask = ~numeric_data_only.isna().all(axis=1)
         
-        # Check each numeric column for invalid values
+        # Also remove negative values and infinite values for performance metrics
         for col in numeric_cols:
             col_series = processed_df[col]
-            
-            # Track negative values
-            negative_mask = col_series < 0
-            removal_reasons['negative_values'][col] = negative_mask.sum()
-            
-            # Track infinite values
-            inf_mask = np.isinf(col_series)
-            removal_reasons['infinite_values'][col] = inf_mask.sum()
-            
-            # Track NaN values
-            nan_mask = pd.isna(col_series)
-            removal_reasons['nan_values'][col] = nan_mask.sum()
-            
-            # Update valid mask - ONLY remove infinite values
-            # Keep negative values and NaN for now (can be filtered later)
-            valid_mask = valid_mask & ~inf_mask
-        
-        # Show detailed removal statistics
-        if self.debug_mode:
-            st.write(f"\n📊 **Data Quality Report for Dataset {dataset_num}:**")
-            st.write(f"- Rows with all columns NaN: {removal_reasons['all_nan']}")
-            
-            if any(removal_reasons['negative_values'].values()):
-                st.write("- Negative values by column:")
-                for col, count in removal_reasons['negative_values'].items():
-                    if count > 0:
-                        st.write(f"  - {col}: {count} rows")
-            
-            if any(removal_reasons['infinite_values'].values()):
-                st.write("- Infinite values by column:")
-                for col, count in removal_reasons['infinite_values'].items():
-                    if count > 0:
-                        st.write(f"  - {col}: {count} rows")
-            
-            if any(removal_reasons['nan_values'].values()):
-                st.write("- NaN values by column:")
-                for col, count in removal_reasons['nan_values'].items():
-                    if count > 0:
-                        st.write(f"  - {col}: {count} rows ({count/len(df)*100:.1f}%)")
+            valid_mask = valid_mask & (col_series >= 0) & ~np.isinf(col_series) & ~pd.isna(col_series)
         
         invalid_count = len(df) - valid_mask.sum()
         
         if invalid_count > 0:
-            st.warning(f"⚠️ Found {invalid_count} rows with infinite values or all columns NaN (removed)")
-            st.info("💡 **Note**: Individual NaN values and negative values are KEPT for flexibility. Use outlier removal if needed.")
+            st.warning(f"⚠️ Found {invalid_count} invalid rows in dataset {dataset_num} (NaN, negative values)")
         
         # Create clean dataset
         clean_data = processed_df[valid_mask].copy().reset_index(drop=True)
-        
-        # Check if we have any data left
-        if len(clean_data) == 0:
-            st.error(f"❌ No valid data remaining after cleaning for dataset {dataset_num}")
-            return False
         
         # Add time column
         clean_data['TimeMinutes'] = np.arange(len(clean_data)) / 60
@@ -188,210 +125,14 @@ class GamingPerformanceAnalyzer:
         setattr(self, target_original_data, clean_data)
         
         if self.debug_mode:
-            st.write(f"\n✅ **Dataset {dataset_num} Final data check**:")
-            st.write(f"   - Original rows: {len(df)}")
-            st.write(f"   - Valid rows after cleaning: {len(clean_data)}")
-            st.write(f"   - Rows removed: {len(df) - len(clean_data)} ({(len(df) - len(clean_data))/len(df)*100:.1f}%)")
+            st.write(f"✅ **Dataset {dataset_num} Final data check**:")
+            st.write(f"   - Total rows: {len(clean_data)}")
             st.write(f"   - Numeric columns: {numeric_cols}")
             st.write(f"   - All columns: {list(clean_data.columns)}")
-            
-            # Show sample of data
-            with st.expander("🔍 View sample data (first 5 rows)"):
-                st.dataframe(clean_data.head())
         
         st.success(f"✅ Dataset {dataset_num} loaded successfully using delimiter '{delimiter}' and encoding '{encoding}'")
         
         return True
-    
-    def create_performance_chart(self, config):
-        """Create performance chart with FPS and CPU focus (dual y-axis)"""
-        try:
-            data = self.processed_data if self.processed_data is not None else self.original_data
-            
-            if data is None:
-                st.error("❌ No data available for chart generation")
-                return None
-            
-            # Debug: Check data shape
-            if self.debug_mode:
-                st.write(f"📊 **Chart Debug - Data shape**: {data.shape}")
-                st.write(f"📊 **Available columns**: {list(data.columns)}")
-            
-            # Find FPS and CPU columns with more flexible matching
-            fps_col = None
-            cpu_col = None
-            
-            for col in self.numeric_columns:
-                col_lower = col.lower()
-                # More flexible FPS matching
-                if fps_col is None and any(term in col_lower for term in ['fps', 'frame', 'framerate']):
-                    fps_col = col
-                    if self.debug_mode:
-                        st.write(f"📊 Found FPS column: {col}")
-                # More flexible CPU matching
-                elif cpu_col is None and any(term in col_lower for term in ['cpu', 'processor']):
-                    cpu_col = col
-                    if self.debug_mode:
-                        st.write(f"📊 Found CPU column: {col}")
-            
-            if not fps_col and not cpu_col:
-                st.error("❌ No FPS or CPU columns found in the data")
-                st.info("💡 Looking for columns containing: 'fps', 'frame', 'cpu', 'processor'")
-                st.write("Available numeric columns:", self.numeric_columns)
-                return None
-            
-            # CREATE FILTERED DATAFRAME WITH ONLY FPS AND CPU
-            columns_to_keep = ['TimeMinutes']
-            if fps_col:
-                columns_to_keep.append(fps_col)
-            if cpu_col:
-                columns_to_keep.append(cpu_col)
-            
-            # Filter data to only include needed columns
-            filtered_data = data[columns_to_keep].copy()
-            
-            # Remove rows where BOTH FPS and CPU are NaN (if both columns exist)
-            if fps_col and cpu_col:
-                valid_mask = ~(filtered_data[fps_col].isna() & filtered_data[cpu_col].isna())
-                filtered_data = filtered_data[valid_mask].reset_index(drop=True)
-                if self.debug_mode:
-                    st.write(f"📊 Removed {(~valid_mask).sum()} rows where both FPS and CPU are NaN")
-            
-            # Update time column after filtering
-            filtered_data['TimeMinutes'] = np.arange(len(filtered_data)) / 60
-            
-            if self.debug_mode:
-                st.write(f"📊 **Filtered data for chart**: {filtered_data.shape}")
-                st.write(f"📊 **Using only columns**: {list(filtered_data.columns)}")
-            
-            # Create figure with dark theme
-            plt.style.use('dark_background')
-            fig, ax1 = plt.subplots(figsize=(16, 9))
-            fig.patch.set_facecolor('#0E1117')
-            
-            time_data = filtered_data['TimeMinutes']
-            
-            # Check time data validity
-            if len(time_data) == 0:
-                st.error("❌ No valid data remaining after filtering")
-                return None
-            
-            # Plot FPS on primary axis (left)
-            if fps_col and fps_col in filtered_data.columns:
-                fps_data = filtered_data[fps_col].fillna(0)  # Fill NaN with 0 for plotting
-                fps_color = '#00D4FF'  # Cyan for FPS
-                
-                if self.debug_mode:
-                    st.write(f"📊 Plotting FPS data: {len(fps_data)} points")
-                    st.write(f"   - Min: {fps_data.min():.1f}, Max: {fps_data.max():.1f}, Avg: {fps_data.mean():.1f}")
-                
-                line1 = ax1.plot(time_data, fps_data, color=fps_color, linewidth=3, 
-                               label='FPS', alpha=0.9, zorder=2)
-                
-                ax1.set_xlabel('Time (minutes)', fontsize=14, color='white', fontweight='bold')
-                ax1.set_ylabel('FPS', fontsize=14, color=fps_color, fontweight='bold')
-                ax1.tick_params(axis='y', labelcolor=fps_color, labelsize=12, colors=fps_color)
-                ax1.tick_params(axis='x', colors='white', labelsize=12)
-                
-                # Set FPS limits (0 to max + 10%)
-                fps_max = fps_data.max() * 1.1 if not pd.isna(fps_data.max()) and fps_data.max() > 0 else 120
-                ax1.set_ylim(0, fps_max)
-                
-                # Add horizontal reference lines for FPS
-                ax1.axhline(y=60, color='green', linestyle='--', alpha=0.5, linewidth=1)
-                ax1.axhline(y=30, color='orange', linestyle='--', alpha=0.5, linewidth=1)
-                
-                # Safe text positioning
-                text_x_pos = time_data.iloc[-1] * 0.02 if len(time_data) > 0 else 0.02
-                ax1.text(text_x_pos, 62, '60 FPS', color='green', fontsize=10)
-                ax1.text(text_x_pos, 32, '30 FPS', color='orange', fontsize=10)
-            
-            # Plot CPU on secondary axis (right)
-            if cpu_col and cpu_col in filtered_data.columns:
-                ax2 = ax1.twinx()
-                cpu_data = filtered_data[cpu_col].fillna(0)  # Fill NaN with 0 for plotting
-                cpu_color = '#FF6B35'  # Orange for CPU
-                
-                if self.debug_mode:
-                    st.write(f"📊 Plotting CPU data: {len(cpu_data)} points")
-                    st.write(f"   - Min: {cpu_data.min():.1f}, Max: {cpu_data.max():.1f}, Avg: {cpu_data.mean():.1f}")
-                
-                line2 = ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=3, 
-                               label='CPU Usage (%)', alpha=0.9, zorder=1)
-                
-                ax2.set_ylabel('CPU Usage (%)', fontsize=14, color=cpu_color, fontweight='bold')
-                ax2.tick_params(axis='y', labelcolor=cpu_color, labelsize=12, colors=cpu_color)
-                
-                # Set CPU limits (0 to 100%)
-                ax2.set_ylim(0, 100)
-                
-                # Add horizontal reference line for CPU
-                ax2.axhline(y=80, color='red', linestyle='--', alpha=0.3, linewidth=1)
-                text_x_pos = time_data.iloc[-1] * 0.02 if len(time_data) > 0 else 0.02
-                ax2.text(text_x_pos, 82, '80% CPU', color='red', fontsize=10)
-            
-            # Configure primary axis styling
-            ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
-            ax1.set_facecolor('#0E1117')
-            
-            # Title
-            title_lines = []
-            if config['game_title']:
-                title_lines.append(config['game_title'])
-            if config['game_settings']:
-                title_lines.append(config['game_settings'])
-            if config['game_mode']:
-                title_lines.append(config['game_mode'])
-            
-            if title_lines:
-                plt.suptitle('\n'.join(title_lines), 
-                           fontsize=20, fontweight='bold', 
-                           color='white', y=0.95)
-            
-            # Create legend
-            legend_elements = []
-            if config['smartphone_name']:
-                legend_elements.append(plt.Line2D([0], [0], color='white', 
-                                                label=config['smartphone_name'], linewidth=3))
-            
-            if fps_col:
-                legend_elements.append(plt.Line2D([0], [0], color=fps_color, 
-                                                linewidth=3, label='FPS'))
-            if cpu_col:
-                legend_elements.append(plt.Line2D([0], [0], color=cpu_color, 
-                                                linewidth=3, label='CPU Usage (%)'))
-            
-            if legend_elements:
-                legend = ax1.legend(handles=legend_elements, loc='upper right', 
-                                  framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
-                legend.get_frame().set_facecolor('#262730')
-                for text in legend.get_texts():
-                    text.set_color('white')
-                    if config['smartphone_name'] and text.get_text() == config['smartphone_name']:
-                        text.set_fontweight('bold')
-            
-            # Clean up spines
-            ax1.spines['top'].set_visible(False)
-            ax1.spines['right'].set_visible(False)
-            ax1.spines['bottom'].set_color('white')
-            ax1.spines['left'].set_color(fps_color if fps_col else 'white')
-            
-            if cpu_col:
-                ax2.spines['top'].set_visible(False)
-                ax2.spines['left'].set_visible(False)
-                ax2.spines['right'].set_color(cpu_color)
-                ax2.spines['bottom'].set_color('white')
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            st.error(f"❌ Chart generation failed: {str(e)}")
-            if self.debug_mode:
-                st.exception(e)
-            return None
-    
-    # ... (rest of the methods remain the same)
     
     def get_column_display_name(self, col_name):
         """Generate user-friendly display names for columns"""
@@ -538,7 +279,7 @@ class GamingPerformanceAnalyzer:
         return True
     
     def create_comparison_chart(self, config):
-        """Create comparison chart with FPS and CPU focus (dual y-axis)"""
+        """Create comparison chart with both datasets"""
         try:
             # Get data from both datasets
             data1 = self.processed_data if self.processed_data is not None else self.original_data
@@ -548,20 +289,11 @@ class GamingPerformanceAnalyzer:
                 st.error("❌ Need both datasets for comparison")
                 return None
             
-            # Find FPS and CPU columns in both datasets
-            fps_col = None
-            cpu_col = None
+            # Get selected columns for plotting
+            selected_columns = config['selected_columns']
             
-            # Find common FPS and CPU columns
-            for col in self.numeric_columns:
-                if col in self.numeric_columns_2:
-                    if 'fps' in col.lower() and fps_col is None:
-                        fps_col = col
-                    elif 'cpu' in col.lower() and cpu_col is None:
-                        cpu_col = col
-            
-            if not fps_col and not cpu_col:
-                st.error("❌ No common FPS or CPU columns found between datasets")
+            if not selected_columns:
+                st.error("❌ No columns selected for plotting")
                 return None
             
             # Create figure with dark theme
@@ -572,25 +304,926 @@ class GamingPerformanceAnalyzer:
             time_data1 = data1['TimeMinutes']
             time_data2 = data2['TimeMinutes']
             
-            # Plot FPS on primary axis (left)
-            if fps_col:
-                fps_data1 = data1[fps_col]
-                fps_data2 = data2[fps_col]
-                fps_color1 = '#00D4FF'  # Bright cyan for dataset 1
-                fps_color2 = '#0099CC'  # Darker cyan for dataset 2
+            # Create multiple y-axes for different metrics
+            axes = [ax1]
+            colors_used = []
+            
+            for i, col in enumerate(selected_columns):
+                # Check if column exists in both datasets
+                if col not in data1.columns or col not in data2.columns:
+                    continue
                 
-                line1 = ax1.plot(time_data1, fps_data1, color=fps_color1, linewidth=3, 
-                               label=f'FPS - {config["device_name_1"]}', alpha=0.9, zorder=2)
-                line2 = ax1.plot(time_data2, fps_data2, color=fps_color2, linewidth=3, 
-                               linestyle='--', label=f'FPS - {config["device_name_2"]}', alpha=0.9, zorder=2)
-                
-                ax1.set_xlabel('Time (minutes)', fontsize=14, color='white', fontweight='bold')
-                ax1.set_ylabel('FPS', fontsize=14, color='#00D4FF', fontweight='bold')
-                ax1.tick_params(axis='y', labelcolor='#00D4FF', labelsize=12, colors='#00D4FF')
-                ax1.tick_params(axis='x', colors='white', labelsize=12)
-                
-                # Set FPS limits (0 to max + 10%)
-                if not pd.isna(fps_data1.max()) and not pd.isna(fps_data2.max()):
-                    fps_max = max(fps_data1.max(), fps_data2.max()) * 1.1
+                # Use appropriate axis
+                if i == 0:
+                    ax = ax1
                 else:
-                    fps_max = 120
+                    ax = ax1.twinx()
+                    # Offset additional axes
+                    if i > 1:
+                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
+                    axes.append(ax)
+                
+                col_data1 = data1[col]
+                col_data2 = data2[col]
+                col_color1 = config.get(f'{col}_color_1', self.get_column_color_suggestion(col, 1))
+                col_color2 = config.get(f'{col}_color_2', self.get_column_color_suggestion(col, 2))
+                col_display = self.get_column_display_name(col)
+                
+                # Plot lines for both datasets
+                line1 = ax.plot(time_data1, col_data1, 
+                              color=col_color1, linewidth=2.5, 
+                              label=f"{col_display} - {config['device_name_1']}", 
+                              alpha=0.8, zorder=len(selected_columns)-i)
+                
+                line2 = ax.plot(time_data2, col_data2, 
+                              color=col_color2, linewidth=2.5, linestyle='--',
+                              label=f"{col_display} - {config['device_name_2']}", 
+                              alpha=0.8, zorder=len(selected_columns)-i)
+                
+                # Configure axis
+                ax.set_ylabel(col_display, fontsize=12, color='white', fontweight='bold')
+                ax.tick_params(axis='y', colors='white', labelsize=10)
+                
+                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
+                try:
+                    max1 = col_data1.max() if not col_data1.empty and not pd.isna(col_data1.max()) else 0
+                    max2 = col_data2.max() if not col_data2.empty and not pd.isna(col_data2.max()) else 0
+                    
+                    # Handle NaN and Inf values
+                    if pd.isna(max1) or np.isinf(max1):
+                        max1 = 0
+                    if pd.isna(max2) or np.isinf(max2):
+                        max2 = 0
+                    
+                    combined_max = max(max1, max2, 1)  # Ensure at least 1 as minimum
+                    padding = combined_max * 0.1 if combined_max > 0 else 1
+                    
+                    final_max = combined_max + padding
+                    
+                    # Final safety check
+                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
+                        final_max = 100  # Default fallback
+                    
+                    ax.set_ylim(0, final_max)
+                    
+                except Exception as e:
+                    # Fallback to safe defaults
+                    ax.set_ylim(0, 100)
+                    if self.debug_mode:
+                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
+                
+                colors_used.append((col_display, col_color1, col_color2, config['device_name_1'], config['device_name_2']))
+            
+            # Configure primary axis
+            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
+            ax1.tick_params(axis='x', colors='white', labelsize=10)
+            ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
+            ax1.set_facecolor('#0E1117')
+            
+            # Title
+            title_lines = [f"🆚 Performance Comparison: {config['device_name_1']} vs {config['device_name_2']}"]
+            if config['game_title']:
+                title_lines.append(config['game_title'])
+            if config['game_settings']:
+                title_lines.append(config['game_settings'])
+            
+            plt.suptitle('\n'.join(title_lines), 
+                        fontsize=18, fontweight='bold', 
+                        color='white', y=0.95)
+            
+            # Legend
+            legend_elements = []
+            for col_display, col_color1, col_color2, device1, device2 in colors_used:
+                legend_elements.append(plt.Line2D([0], [0], color='white', 
+                                                linewidth=2.5, label=f"{col_display} - {device1}"))
+                legend_elements.append(plt.Line2D([0], [0], color='white', 
+                                                linewidth=2.5, linestyle='--', label=f"{col_display} - {device2}"))
+            
+            legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                              framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
+            legend.get_frame().set_facecolor('#262730')
+            for text in legend.get_texts():
+                text.set_color('white')
+            
+            # Remove spines for cleaner look
+            for ax in axes:
+                ax.spines['top'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                if ax != ax1:
+                    ax.spines['right'].set_color('white')
+                else:
+                    ax.spines['right'].set_visible(False)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            st.error(f"❌ Comparison chart generation failed: {str(e)}")
+            return None
+    
+    def get_comparison_stats(self, selected_columns=None):
+        """Calculate comparison statistics for both datasets"""
+        if self.original_data is None or self.original_data_2 is None:
+            return {}
+        
+        data1 = self.processed_data if self.processed_data is not None else self.original_data
+        data2 = self.processed_data_2 if self.processed_data_2 is not None else self.original_data_2
+        
+        if selected_columns is None:
+            # Find common columns
+            selected_columns = list(set(self.numeric_columns) & set(self.numeric_columns_2))
+        
+        stats = {
+            'duration_1': len(data1) / 60,
+            'duration_2': len(data2) / 60,
+            'total_frames_1': len(data1),
+            'total_frames_2': len(data2),
+            'removed_frames_1': len(self.removed_indices),
+            'removed_frames_2': len(self.removed_indices_2)
+        }
+        
+        # Calculate stats for each selected column
+        for col in selected_columns:
+            if col in data1.columns and col in data2.columns:
+                col_data1 = data1[col]
+                col_data2 = data2[col]
+                col_display = self.get_column_display_name(col)
+                
+                stats[f'{col}_avg_1'] = col_data1.mean()
+                stats[f'{col}_avg_2'] = col_data2.mean()
+                stats[f'{col}_max_1'] = col_data1.max()
+                stats[f'{col}_max_2'] = col_data2.max()
+                stats[f'{col}_min_1'] = col_data1.min()
+                stats[f'{col}_min_2'] = col_data2.min()
+                stats[f'{col}_display'] = col_display
+                
+                # Calculate improvement/difference
+                if col_data1.mean() > 0:
+                    improvement = ((col_data2.mean() - col_data1.mean()) / col_data1.mean()) * 100
+                    stats[f'{col}_improvement'] = improvement
+        
+        return stats
+
+def main():
+    # Custom CSS
+    st.markdown("""
+    <style>
+    .main-header {
+        text-align: center;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 2rem;
+    }
+    .comparison-header {
+        text-align: center;
+        background: linear-gradient(90deg, #ff6b6b 0%, #4ecdc4 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 1rem;
+    }
+    .metric-card {
+        background: #262730;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 4px solid #667eea;
+    }
+    .column-selector {
+        background: #1E1E1E;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #333;
+        margin-bottom: 1rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎮 Gaming Performance Analyzer</h1>
+        <p>Dynamic multi-metric gaming chart generator with comparison mode</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Initialize analyzer
+    analyzer = GamingPerformanceAnalyzer()
+    
+    # Mode selection
+    analysis_mode = st.radio(
+        "🔧 Choose Analysis Mode:",
+        ["📊 Single CSV Analysis", "🆚 CSV Comparison Mode"],
+        horizontal=True
+    )
+    
+    if analysis_mode == "🆚 CSV Comparison Mode":
+        # Comparison Mode
+        st.markdown("""
+        <div class="comparison-header">
+            <h2>🆚 CSV Comparison Mode</h2>
+            <p>Compare performance between two different datasets</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Device configuration
+        col_config1, col_config2 = st.columns(2)
+        
+        with col_config1:
+            st.subheader("📱 Dataset 1 Configuration")
+            device_name_1 = st.text_input("Device/Setup Name 1", value="iPhone 15 Pro Max", key="device1")
+            game_title = st.text_input("🎯 Game Title", value="Mobile Legends: Bang Bang", key="game_comparison")
+        
+        with col_config2:
+            st.subheader("📱 Dataset 2 Configuration") 
+            device_name_2 = st.text_input("Device/Setup Name 2", value="Samsung Galaxy S24 Ultra", key="device2")
+            game_settings = st.text_input("⚙️ Settings/Mode", value="Ultra - 120 FPS", key="settings_comparison")
+        
+        # File uploads
+        col_upload1, col_upload2 = st.columns(2)
+        
+        with col_upload1:
+            st.subheader("📁 Upload Dataset 1")
+            uploaded_file_1 = st.file_uploader(
+                "Upload first CSV file", 
+                type=['csv'],
+                key="upload1",
+                help="First dataset for comparison"
+            )
+        
+        with col_upload2:
+            st.subheader("📁 Upload Dataset 2")
+            uploaded_file_2 = st.file_uploader(
+                "Upload second CSV file", 
+                type=['csv'],
+                key="upload2",
+                help="Second dataset for comparison"
+            )
+        
+        # Process both files if uploaded
+        datasets_loaded = 0
+        
+        if uploaded_file_1 is not None:
+            file_data_1 = uploaded_file_1.read()
+            with st.spinner('📊 Loading Dataset 1...'):
+                if analyzer.load_csv_data(file_data_1, uploaded_file_1.name, 1):
+                    datasets_loaded += 1
+        
+        if uploaded_file_2 is not None:
+            file_data_2 = uploaded_file_2.read()
+            with st.spinner('📊 Loading Dataset 2...'):
+                if analyzer.load_csv_data(file_data_2, uploaded_file_2.name, 2):
+                    datasets_loaded += 1
+        
+        if datasets_loaded == 2:
+            # Find common columns
+            common_columns = list(set(analyzer.numeric_columns) & set(analyzer.numeric_columns_2))
+            
+            if common_columns:
+                st.success(f"✅ Both datasets loaded! Found {len(common_columns)} common metrics for comparison")
+                
+                # Column selection for comparison
+                st.subheader("📊 Select Metrics for Comparison")
+                
+                selected_columns = st.multiselect(
+                    "Choose common metrics to compare:",
+                    common_columns,
+                    default=common_columns[:3] if len(common_columns) >= 3 else common_columns,
+                    help="Only columns present in both datasets can be compared"
+                )
+                
+                if selected_columns:
+                    # Outlier removal options
+                    with st.expander("🔧 Data Processing Options"):
+                        process_dataset1 = st.checkbox("🚫 Remove outliers from Dataset 1", key="outlier1")
+                        process_dataset2 = st.checkbox("🚫 Remove outliers from Dataset 2", key="outlier2")
+                        
+                        if process_dataset1 or process_dataset2:
+                            outlier_method = st.selectbox("Outlier Method", ['percentile', 'iqr', 'zscore'], key="outlier_method_comp")
+                            if outlier_method == 'percentile':
+                                outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1, key="outlier_threshold_comp")
+                            elif outlier_method == 'zscore':
+                                outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1, key="outlier_zscore_comp")
+                            else:
+                                outlier_threshold = 1.5
+                    
+                    # Process datasets
+                    if 'process_dataset1' in locals() and process_dataset1:
+                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 1)
+                    else:
+                        analyzer.processed_data = analyzer.original_data.copy()
+                    
+                    if 'process_dataset2' in locals() and process_dataset2:
+                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 2)
+                    else:
+                        analyzer.processed_data_2 = analyzer.original_data_2.copy()
+                    
+                    # Create comparison chart
+                    st.subheader("📊 Performance Comparison Chart")
+                    
+                    chart_config = {
+                        'game_title': game_title,
+                        'game_settings': game_settings,
+                        'device_name_1': device_name_1,
+                        'device_name_2': device_name_2,
+                        'selected_columns': selected_columns
+                    }
+                    
+                    # Add color configurations for each dataset
+                    color_cols = st.columns(len(selected_columns))
+                    for i, col in enumerate(selected_columns):
+                        col_display = analyzer.get_column_display_name(col)
+                        
+                        with color_cols[i]:
+                            chart_config[f'{col}_color_1'] = st.color_picker(
+                                f"{col_display[:8]}... D1", 
+                                analyzer.get_column_color_suggestion(col, 1),
+                                key=f"color_{col}_1",
+                                help=f"Color for {col_display} - Dataset 1"
+                            )
+                            chart_config[f'{col}_color_2'] = st.color_picker(
+                                f"{col_display[:8]}... D2", 
+                                analyzer.get_column_color_suggestion(col, 2),
+                                key=f"color_{col}_2",
+                                help=f"Color for {col_display} - Dataset 2"
+                            )
+                    
+                    with st.spinner('🎨 Generating comparison chart...'):
+                        chart_fig = analyzer.create_comparison_chart(chart_config)
+                        
+                        if chart_fig:
+                            st.pyplot(chart_fig, use_container_width=True)
+                            
+                            # Export comparison chart
+                            img_buffer = io.BytesIO()
+                            chart_fig.savefig(img_buffer, format='png', dpi=300, 
+                                            bbox_inches='tight', facecolor='#0E1117')
+                            img_buffer.seek(0)
+                            
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            png_filename = f"comparison_{device_name_1.replace(' ', '_')}_vs_{device_name_2.replace(' ', '_')}_{timestamp}.png"
+                            
+                            st.download_button(
+                                label="📸 Download Comparison Chart",
+                                data=img_buffer.getvalue(),
+                                file_name=png_filename,
+                                mime="image/png",
+                                use_container_width=True
+                            )
+                        else:
+                            st.error("Failed to generate comparison chart")
+                    
+                    # Comparison Statistics
+                    st.subheader("📈 Performance Comparison Statistics")
+                    
+                    stats = analyzer.get_comparison_stats(selected_columns)
+                    
+                    # Create comparison metrics
+                    for col in selected_columns:
+                        if f'{col}_avg_1' in stats and f'{col}_avg_2' in stats:
+                            col_display = stats.get(f'{col}_display', analyzer.get_column_display_name(col))
+                            
+                            st.write(f"**{col_display} Comparison:**")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric(
+                                    f"📱 {device_name_1}", 
+                                    f"{stats[f'{col}_avg_1']:.1f}",
+                                    help=f"Average {col_display} for {device_name_1}"
+                                )
+                            
+                            with col2:
+                                st.metric(
+                                    f"📱 {device_name_2}", 
+                                    f"{stats[f'{col}_avg_2']:.1f}",
+                                    help=f"Average {col_display} for {device_name_2}"
+                                )
+                            
+                            with col3:
+                                if f'{col}_improvement' in stats:
+                                    improvement = stats[f'{col}_improvement']
+                                    delta_color = "normal" if abs(improvement) < 5 else ("inverse" if improvement < 0 else "normal")
+                                    
+                                    st.metric(
+                                        "📊 Difference", 
+                                        f"{improvement:+.1f}%",
+                                        delta=f"{improvement:+.1f}%",
+                                        delta_color=delta_color,
+                                        help=f"Performance difference: Dataset 2 vs Dataset 1"
+                                    )
+                            
+                            st.divider()
+                    
+                    # Summary insights
+                    if any('fps' in col.lower() for col in selected_columns):
+                        fps_cols = [col for col in selected_columns if 'fps' in col.lower()]
+                        if fps_cols:
+                            fps_col = fps_cols[0]
+                            fps_avg_1 = stats.get(f'{fps_col}_avg_1', 0)
+                            fps_avg_2 = stats.get(f'{fps_col}_avg_2', 0)
+                            
+                            if fps_avg_1 > 0 and fps_avg_2 > 0:
+                                winner = device_name_1 if fps_avg_1 > fps_avg_2 else device_name_2
+                                winner_fps = max(fps_avg_1, fps_avg_2)
+                                loser_fps = min(fps_avg_1, fps_avg_2)
+                                fps_advantage = ((winner_fps - loser_fps) / loser_fps) * 100
+                                
+                                st.markdown(f"""
+                                <div style="text-align: center; padding: 1rem; background: linear-gradient(45deg, #667eea, #764ba2); 
+                                            border-radius: 10px; margin: 1rem 0;">
+                                    <h3 style="color: white; margin: 0;">🏆 FPS Winner: {winner}</h3>
+                                    <p style="color: white; margin: 0;">{fps_advantage:.1f}% better average FPS performance</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                
+                else:
+                    st.warning("⚠️ Please select at least one metric for comparison")
+            else:
+                st.error("❌ No common columns found between the two datasets")
+        
+        elif datasets_loaded == 1:
+            st.info("📤 Please upload both CSV files to enable comparison mode")
+        
+        elif uploaded_file_1 is not None or uploaded_file_2 is not None:
+            st.info("📊 Loading datasets...")
+    
+    else:
+        # Single CSV Analysis Mode (existing code)
+        # Sidebar configuration
+        with st.sidebar:
+            st.header("🎮 Game Configuration")
+            
+            game_title = st.text_input("🎯 Game Title", value="Mobile Legends: Bang Bang")
+            game_settings = st.text_input("⚙️ Graphics Settings", value="Ultra - 120 FPS")
+            game_mode = st.text_input("🚀 Performance Mode", value="Game Boost Mode")
+            smartphone_name = st.text_input("📱 Device Model", value="iPhone 15 Pro Max")
+            
+            st.divider()
+            
+            st.header("🔧 Quick Data Processing")
+            
+            enable_outlier_removal = st.toggle("🚫 Remove Outliers", value=False)
+            if enable_outlier_removal:
+                outlier_method = st.selectbox("Method", ['percentile', 'iqr', 'zscore'])
+                if outlier_method == 'percentile':
+                    outlier_threshold = st.slider("Bottom Percentile", 0.1, 5.0, 1.0, 0.1)
+                elif outlier_method == 'zscore':
+                    outlier_threshold = st.slider("Z-Score Threshold", 1.0, 4.0, 2.0, 0.1)
+                else:
+                    outlier_threshold = 1.5
+        
+        # Main content
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # File upload
+            st.subheader("📁 Upload Performance Data")
+            uploaded_file = st.file_uploader(
+                "Upload your gaming log CSV file", 
+                type=['csv'],
+                help="CSV should contain numeric performance columns"
+            )
+            
+            if uploaded_file is not None:
+                # Load data
+                file_data = uploaded_file.read()
+                
+                with st.spinner('📊 Loading and analyzing data structure...'):
+                    if analyzer.load_csv_data(file_data, uploaded_file.name, 1):
+                        
+                        if analyzer.original_data is not None and analyzer.numeric_columns:
+                            
+                            # Dynamic Column Selection
+                            st.subheader("📊 Select Metrics to Display")
+                            
+                            with st.container():
+                                st.markdown('<div class="column-selector">', unsafe_allow_html=True)
+                                
+                                # Multi-select for columns
+                                default_columns = []
+                                for col in analyzer.numeric_columns[:4]:  # Select first 4 by default
+                                    default_columns.append(col)
+                                
+                                selected_columns = st.multiselect(
+                                    "Choose metrics to analyze:",
+                                    analyzer.numeric_columns,
+                                    default=default_columns,
+                                    help="Select one or more numeric columns to display on the chart"
+                                )
+                                
+                                if selected_columns:
+                                    st.write(f"**Selected metrics:** {', '.join([analyzer.get_column_display_name(col) for col in selected_columns])}")
+                                    
+                                    # Color and visibility controls for each selected column
+                                    st.write("**Customize appearance:**")
+                                    
+                                    chart_config = {
+                                        'game_title': game_title,
+                                        'game_settings': game_settings,
+                                        'game_mode': game_mode,
+                                        'smartphone_name': smartphone_name,
+                                        'selected_columns': selected_columns
+                                    }
+                                    
+                                    # Create columns for color pickers
+                                    color_cols = st.columns(min(len(selected_columns), 4))
+                                    
+                                    for i, col in enumerate(selected_columns):
+                                        col_display = analyzer.get_column_display_name(col)
+                                        suggested_color = analyzer.get_column_color_suggestion(col, 1)
+                                        
+                                        with color_cols[i % 4]:
+                                            chart_config[f'{col}_color'] = st.color_picker(
+                                                f"{col_display[:10]}...", 
+                                                suggested_color,
+                                                key=f"color_{col}_{i}",
+                                                help=f"Color for {col_display}"
+                                            )
+                                            chart_config[f'hide_{col}'] = st.checkbox(
+                                                f"Hide {col_display[:15]}...",
+                                                value=False,
+                                                key=f"hide_{col}_{i}",
+                                                help=f"Hide {col_display} from chart"
+                                            )
+                                
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            if selected_columns:
+                                # Data Processing Options
+                                with st.expander("🔧 Advanced Processing Options"):
+                                    enable_advanced_outlier = st.toggle("🚫 Advanced Outlier Removal", value=False, key="advanced_outlier")
+                                    if enable_advanced_outlier:
+                                        advanced_outlier_method = st.selectbox("Advanced Method", ['percentile', 'iqr', 'zscore'], key="advanced_method")
+                                        
+                                        # Select columns for outlier removal
+                                        outlier_columns = st.multiselect(
+                                            "Apply outlier removal to:",
+                                            selected_columns,
+                                            default=selected_columns,
+                                            help="Choose which metrics to apply outlier removal",
+                                            key="outlier_columns_select"
+                                        )
+                                        
+                                        if advanced_outlier_method == 'percentile':
+                                            advanced_outlier_threshold = st.slider("Advanced Bottom Percentile", 0.1, 10.0, 2.0, 0.1, key="advanced_threshold")
+                                        elif advanced_outlier_method == 'zscore':
+                                            advanced_outlier_threshold = st.slider("Advanced Z-Score Threshold", 1.0, 4.0, 2.5, 0.1, key="advanced_zscore")
+                                        else:
+                                            advanced_outlier_threshold = 1.5
+                                
+                                # Process data
+                                processed = False
+                                
+                                # Priority 1: Advanced outlier removal (if enabled)
+                                if 'enable_advanced_outlier' in locals() and enable_advanced_outlier and 'outlier_columns' in locals():
+                                    with st.spinner('🔧 Applying advanced outlier removal...'):
+                                        analyzer.remove_outliers(advanced_outlier_method, advanced_outlier_threshold, outlier_columns, 1)
+                                        processed = True
+                                
+                                # Priority 2: Quick outlier removal from sidebar (if enabled and no advanced processing)
+                                elif enable_outlier_removal and not processed:
+                                    with st.spinner('🔧 Removing outliers from sidebar settings...'):
+                                        analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 1)
+                                        processed = True
+                                
+                                # Default: Use raw data
+                                if not processed:
+                                    analyzer.processed_data = analyzer.original_data.copy()
+                                    st.info("📊 **Raw Mode**: Using original data without processing")
+                                
+                                # Create chart (using single dataset method)
+                                st.subheader("📊 Performance Chart")
+                                
+                                with st.spinner('🎨 Generating dynamic chart...'):
+                                    chart_fig = analyzer.create_performance_chart(chart_config)
+                                    
+                                    if chart_fig:
+                                        st.pyplot(chart_fig, use_container_width=True)
+                                    else:
+                                        st.error("Failed to generate chart")
+                            else:
+                                st.warning("⚠️ Please select at least one metric to display")
+        
+        with col2:
+            # Statistics panel (single dataset)
+            if uploaded_file is not None and analyzer.original_data is not None:
+                st.subheader("📈 Performance Statistics")
+                
+                if 'selected_columns' in locals() and selected_columns:
+                    stats = analyzer.get_performance_stats(selected_columns)
+                    
+                    # Show grade if FPS is available
+                    if any('fps' in col.lower() for col in selected_columns) and 'grade' in stats:
+                        st.markdown(f"""
+                        <div style="text-align: center; padding: 1rem; background: linear-gradient(45deg, #667eea, #764ba2); 
+                                    border-radius: 10px; margin-bottom: 1rem;">
+                            <h3 style="color: white; margin: 0;">{stats['grade']}</h3>
+                            <p style="color: white; margin: 0;">Overall Performance</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Display stats for each selected column
+                    for i, col in enumerate(selected_columns):
+                        if f'{col}_avg' in stats:
+                            col_display = stats.get(f'{col}_display', analyzer.get_column_display_name(col))
+                            
+                            col1_stat, col2_stat = st.columns(2)
+                            with col1_stat:
+                                st.metric(f"📊 Avg {col_display[:8]}...", f"{stats[f'{col}_avg']:.1f}")
+                                if f'{col}_min' in stats:
+                                    st.metric(f"🔻 Min {col_display[:8]}...", f"{stats[f'{col}_min']:.1f}")
+                            
+                            with col2_stat:
+                                if f'{col}_max' in stats:
+                                    st.metric(f"🔺 Max {col_display[:8]}...", f"{stats[f'{col}_max']:.1f}")
+                                if f'{col}_std' in stats:
+                                    st.metric(f"📏 Std {col_display[:8]}...", f"{stats[f'{col}_std']:.1f}")
+                    
+                    # Special FPS metrics
+                    if 'fps_60_plus' in stats:
+                        st.metric("🎮 60+ FPS Time", f"{stats['fps_60_plus']:.1f}%")
+                    if 'frame_drops' in stats:
+                        st.metric("⚠️ Frame Drops", f"{stats['frame_drops']}")
+                    
+                    # General metrics
+                    st.metric("⏱️ Duration", f"{stats['duration']:.1f} min")
+                    if stats['removed_frames'] > 0:
+                        st.metric("🚫 Removed Frames", f"{stats['removed_frames']}")
+                    
+                    # Export section
+                    st.subheader("💾 Export Options")
+                    
+                    # Chart export
+                    if 'chart_fig' in locals() and chart_fig:
+                        img_buffer = io.BytesIO()
+                        chart_fig.savefig(img_buffer, format='png', dpi=300, 
+                                        bbox_inches='tight', facecolor='#0E1117')
+                        img_buffer.seek(0)
+                        
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        png_filename = f"{game_title.replace(' ', '_')}_chart_{timestamp}.png"
+                        
+                        st.download_button(
+                            label="📸 Download Chart",
+                            data=img_buffer.getvalue(),
+                            file_name=png_filename,
+                            mime="image/png",
+                            use_container_width=True
+                        )
+                else:
+                    st.info("📊 Select metrics from the main panel to see statistics")
+            else:
+                st.info("📤 Upload CSV file to see performance statistics")
+    
+    # Add missing methods for single dataset compatibility
+    def create_performance_chart(self, config):
+        """Create performance chart with dynamic axes (single dataset)"""
+        try:
+            data = self.processed_data if self.processed_data is not None else self.original_data
+            
+            if data is None:
+                st.error("❌ No data available for chart generation")
+                return None
+            
+            # Get selected columns for plotting
+            selected_columns = [col for col in config['selected_columns'] if not config.get(f'hide_{col}', False)]
+            
+            if not selected_columns:
+                st.error("❌ No columns selected for plotting")
+                return None
+            
+            # Create figure with dark theme
+            plt.style.use('dark_background')
+            fig, ax1 = plt.subplots(figsize=(16, 9))
+            fig.patch.set_facecolor('#0E1117')
+            
+            time_data = data['TimeMinutes']
+            
+            # Create multiple y-axes for different metrics
+            axes = [ax1]
+            colors_used = []
+            
+            for i, col in enumerate(selected_columns):
+                if col not in data.columns or col not in self.numeric_columns:
+                    continue
+                
+                # Use appropriate axis
+                if i == 0:
+                    ax = ax1
+                else:
+                    ax = ax1.twinx()
+                    # Offset additional axes
+                    if i > 1:
+                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
+                    axes.append(ax)
+                
+                col_data = data[col]
+                col_color = config.get(f'{col}_color', self.get_column_color_suggestion(col, 1))
+                col_display = self.get_column_display_name(col)
+                
+                # Plot the line
+                line = ax.plot(time_data, col_data, 
+                              color=col_color, linewidth=2.5, 
+                              label=col_display, alpha=0.8, zorder=len(selected_columns)-i)
+                
+                # Configure axis
+                ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
+                ax.tick_params(axis='y', colors='white', labelsize=10)
+                
+                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
+                try:
+                    data_max = col_data.max() if not col_data.empty and not pd.isna(col_data.max()) else 0
+                    
+                    # Handle NaN and Inf values
+                    if pd.isna(data_max) or np.isinf(data_max):
+                        data_max = 100  # Default fallback
+                    
+                    if data_max <= 0:
+                        data_max = 100  # Ensure positive value
+                    
+                    padding = data_max * 0.1
+                    final_max = data_max + padding
+                    
+                    # Final safety check
+                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
+                        final_max = 100  # Default fallback
+                    
+                    ax.set_ylim(0, final_max)
+                    
+                except Exception as e:
+                    # Fallback to safe defaults
+                    ax.set_ylim(0, 100)
+                    if self.debug_mode:
+                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
+                
+                colors_used.append((col_display, col_color))
+            
+            # Configure primary axis
+            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
+            ax1.tick_params(axis='x', colors='white', labelsize=10)
+            ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
+            ax1.set_facecolor('#0E1117')
+            
+            # Title
+            title_lines = [config['game_title']]
+            if config['game_settings']:
+                title_lines.append(config['game_settings'])
+            if config['game_mode']:
+                title_lines.append(config['game_mode'])
+            
+            plt.suptitle('\n'.join(title_lines), 
+                        fontsize=20, fontweight='bold', 
+                        color='white', y=0.95)
+            
+            # Legend
+            if config['smartphone_name'] or colors_used:
+                legend_elements = []
+                
+                if config['smartphone_name']:
+                    legend_elements.append(plt.Line2D([0], [0], color='white', label=config['smartphone_name']))
+                
+                for col_display, col_color in colors_used:
+                    legend_elements.append(plt.Line2D([0], [0], color='white', 
+                                                    linewidth=2.5, label=col_display))
+                
+                legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                                  framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
+                legend.get_frame().set_facecolor('#262730')
+                for text in legend.get_texts():
+                    text.set_color('white')
+                    if config['smartphone_name'] and text.get_text() == config['smartphone_name']:
+                        text.set_fontweight('bold')
+            
+            # Remove spines for cleaner look
+            for ax in axes:
+                ax.spines['top'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                if ax != ax1:
+                    ax.spines['right'].set_color(colors_used[axes.index(ax)-1][1] if axes.index(ax)-1 < len(colors_used) else 'white')
+                else:
+                    ax.spines['right'].set_visible(False)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            st.error(f"❌ Chart generation failed: {str(e)}")
+            return None
+    
+    def get_performance_stats(self, selected_columns=None):
+        """Calculate performance statistics for selected columns (single dataset)"""
+        if self.original_data is None:
+            return {}
+        
+        data = self.processed_data if self.processed_data is not None else self.original_data
+        
+        if selected_columns is None:
+            selected_columns = self.numeric_columns
+        
+        stats = {
+            'duration': len(data) / 60,
+            'total_frames': len(data),
+            'removed_frames': len(self.removed_indices)
+        }
+        
+        # Calculate stats for each selected column
+        for col in selected_columns:
+            if col not in data.columns or col not in self.numeric_columns:
+                continue
+                
+            col_data = data[col]
+            col_display = self.get_column_display_name(col)
+            
+            stats[f'{col}_avg'] = col_data.mean()
+            stats[f'{col}_min'] = col_data.min()
+            stats[f'{col}_max'] = col_data.max()
+            stats[f'{col}_std'] = col_data.std()
+            stats[f'{col}_display'] = col_display
+            
+            # Special calculations for FPS
+            if 'fps' in col.lower():
+                stats['fps_60_plus'] = (col_data >= 60).sum() / len(col_data) * 100
+                stats['frame_drops'] = (col_data < 30).sum()
+                
+                # Performance grading based on FPS
+                avg_fps = col_data.mean()
+                if avg_fps >= 90:
+                    stats['grade'] = "🏆 Excellent"
+                    stats['grade_color'] = "green"
+                elif avg_fps >= 60:
+                    stats['grade'] = "✅ Good"
+                    stats['grade_color'] = "blue"
+                elif avg_fps >= 30:
+                    stats['grade'] = "⚠️ Playable"
+                    stats['grade_color'] = "orange"
+                else:
+                    stats['grade'] = "❌ Poor"
+                    stats['grade_color'] = "red"
+        
+        return stats
+    
+    # Add the missing methods to the analyzer class
+    analyzer.create_performance_chart = create_performance_chart.__get__(analyzer, GamingPerformanceAnalyzer)
+    analyzer.get_performance_stats = get_performance_stats.__get__(analyzer, GamingPerformanceAnalyzer)
+    
+    # Documentation
+    with st.expander("📋 CSV Comparison Features"):
+        st.markdown("""
+        **🆚 NEW: CSV Comparison Mode**
+        - **Side-by-side analysis**: Compare two different datasets
+        - **Common metrics**: Only columns present in both files
+        - **Visual comparison**: Solid vs dashed lines
+        - **Performance insights**: Automatic winner detection
+        - **Export options**: Save comparison charts
+        
+        **🎯 Use Cases:**
+        - **Device comparison**: iPhone vs Android performance
+        - **Settings testing**: Ultra vs High graphics
+        - **Before/After**: Game optimization results
+        - **Hardware analysis**: Different SoC performance
+        - **Game versions**: Update impact analysis
+        
+        **📊 Comparison Features:**
+        - **Percentage differences**: Clear improvement metrics
+        - **Winner detection**: Automatic best performer
+        - **Color coding**: Different shades per dataset
+        - **Line styles**: Solid (Dataset 1) vs Dashed (Dataset 2)
+        """)
+    
+    with st.expander("🎨 Comparison Chart Guide"):
+        st.markdown("""
+        **🎯 Reading Comparison Charts:**
+        - **Solid lines**: First dataset (Device 1)
+        - **Dashed lines**: Second dataset (Device 2)
+        - **Higher is better**: FPS, Battery %
+        - **Lower is better**: CPU %, Temperature
+        
+        **🌈 Color Strategy:**
+        - **Bright colors**: First dataset
+        - **Darker shades**: Second dataset
+        - **Same metric family**: Similar color base
+        
+        **📊 Best Practices:**
+        - **Sync time ranges**: Ensure similar test duration
+        - **Same conditions**: Consistent game settings
+        - **Clean data**: Apply outlier removal consistently
+        - **Focus metrics**: Choose 2-4 key comparisons
+        """)
+
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #888; padding: 1rem;">
+        🎮 Gaming Performance Analyzer v5.0 - Comparison Edition<br>
+        <small>📊 Dynamic Columns • 🆚 CSV Comparison • 🎨 Multi-Axis Charts • 🎬 Video Export • 📈 Advanced Analytics</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
+    
