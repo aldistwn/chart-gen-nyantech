@@ -590,4 +590,7 @@ class GamingPerformanceAnalyzer:
                 ax1.tick_params(axis='x', colors='white', labelsize=12)
                 
                 # Set FPS limits (0 to max + 10%)
-                fps_max = max(fps_data1.max(), fps_data2.max()) * 1.1 if not pd.isna(fps_data1.max()) and not pd.isna(fps_data2.max()) else 120
+                if not pd.isna(fps_data1.max()) and not pd.isna(fps_data2.max()):
+                    fps_max = max(fps_data1.max(), fps_data2.max()) * 1.1
+                else:
+                    fps_max = 120
