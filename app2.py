@@ -279,7 +279,7 @@ class GamingPerformanceAnalyzer:
         return True
     
     def create_performance_chart(self, config):
-        """Create performance chart with dynamic axes (single dataset)"""
+        """Create performance chart with FPS and CPU focus (dual y-axis)"""
         try:
             data = self.processed_data if self.processed_data is not None else self.original_data
             
@@ -287,11 +287,18 @@ class GamingPerformanceAnalyzer:
                 st.error("❌ No data available for chart generation")
                 return None
             
-            # Get selected columns for plotting
-            selected_columns = [col for col in config['selected_columns'] if not config.get(f'hide_{col}', False)]
+            # Find FPS and CPU columns
+            fps_col = None
+            cpu_col = None
             
-            if not selected_columns:
-                st.error("❌ No columns selected for plotting")
+            for col in self.numeric_columns:
+                if 'fps' in col.lower() and fps_col is None:
+                    fps_col = col
+                elif 'cpu' in col.lower() and cpu_col is None:
+                    cpu_col = col
+            
+            if not fps_col and not cpu_col:
+                st.error("❌ No FPS or CPU columns found in the data")
                 return None
             
             # Create figure with dark theme
@@ -301,93 +308,78 @@ class GamingPerformanceAnalyzer:
             
             time_data = data['TimeMinutes']
             
-            # Create multiple y-axes for different metrics
-            axes = [ax1]
-            colors_used = []
+            # Plot FPS on primary axis (left)
+            if fps_col:
+                fps_data = data[fps_col]
+                fps_color = '#00D4FF'  # Cyan for FPS
+                line1 = ax1.plot(time_data, fps_data, color=fps_color, linewidth=3, 
+                               label='FPS', alpha=0.9, zorder=2)
+                
+                ax1.set_xlabel('Time (minutes)', fontsize=14, color='white', fontweight='bold')
+                ax1.set_ylabel('FPS', fontsize=14, color=fps_color, fontweight='bold')
+                ax1.tick_params(axis='y', labelcolor=fps_color, labelsize=12, colors=fps_color)
+                ax1.tick_params(axis='x', colors='white', labelsize=12)
+                
+                # Set FPS limits (0 to max + 10%)
+                fps_max = fps_data.max() * 1.1 if not pd.isna(fps_data.max()) else 120
+                ax1.set_ylim(0, fps_max)
+                
+                # Add horizontal reference lines for FPS
+                ax1.axhline(y=60, color='green', linestyle='--', alpha=0.5, linewidth=1)
+                ax1.axhline(y=30, color='orange', linestyle='--', alpha=0.5, linewidth=1)
+                ax1.text(time_data.iloc[-1] * 0.02, 62, '60 FPS', color='green', fontsize=10)
+                ax1.text(time_data.iloc[-1] * 0.02, 32, '30 FPS', color='orange', fontsize=10)
             
-            for i, col in enumerate(selected_columns):
-                if col not in data.columns or col not in self.numeric_columns:
-                    continue
+            # Plot CPU on secondary axis (right)
+            if cpu_col:
+                ax2 = ax1.twinx()
+                cpu_data = data[cpu_col]
+                cpu_color = '#FF6B35'  # Orange for CPU
+                line2 = ax2.plot(time_data, cpu_data, color=cpu_color, linewidth=3, 
+                               label='CPU Usage (%)', alpha=0.9, zorder=1)
                 
-                # Use appropriate axis
-                if i == 0:
-                    ax = ax1
-                else:
-                    ax = ax1.twinx()
-                    # Offset additional axes
-                    if i > 1:
-                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
-                    axes.append(ax)
+                ax2.set_ylabel('CPU Usage (%)', fontsize=14, color=cpu_color, fontweight='bold')
+                ax2.tick_params(axis='y', labelcolor=cpu_color, labelsize=12, colors=cpu_color)
                 
-                col_data = data[col]
-                col_color = config.get(f'{col}_color', self.get_column_color_suggestion(col, 1))
-                col_display = self.get_column_display_name(col)
+                # Set CPU limits (0 to 100%)
+                ax2.set_ylim(0, 100)
                 
-                # Plot the line
-                line = ax.plot(time_data, col_data, 
-                              color=col_color, linewidth=2.5, 
-                              label=col_display, alpha=0.8, zorder=len(selected_columns)-i)
-                
-                # Configure axis
-                ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
-                ax.tick_params(axis='y', colors='white', labelsize=10)
-                
-                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
-                try:
-                    data_max = col_data.max() if not col_data.empty and not pd.isna(col_data.max()) else 0
-                    
-                    # Handle NaN and Inf values
-                    if pd.isna(data_max) or np.isinf(data_max):
-                        data_max = 100  # Default fallback
-                    
-                    if data_max <= 0:
-                        data_max = 100  # Ensure positive value
-                    
-                    padding = data_max * 0.1
-                    final_max = data_max + padding
-                    
-                    # Final safety check
-                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
-                        final_max = 100  # Default fallback
-                    
-                    ax.set_ylim(0, final_max)
-                    
-                except Exception as e:
-                    # Fallback to safe defaults
-                    ax.set_ylim(0, 100)
-                    if self.debug_mode:
-                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
-                
-                colors_used.append((col_display, col_color))
+                # Add horizontal reference line for CPU
+                ax2.axhline(y=80, color='red', linestyle='--', alpha=0.3, linewidth=1)
+                ax2.text(time_data.iloc[-1] * 0.02, 82, '80% CPU', color='red', fontsize=10)
             
-            # Configure primary axis
-            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-            ax1.tick_params(axis='x', colors='white', labelsize=10)
+            # Configure primary axis styling
             ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
             ax1.set_facecolor('#0E1117')
             
             # Title
-            title_lines = [config['game_title']]
+            title_lines = []
+            if config['game_title']:
+                title_lines.append(config['game_title'])
             if config['game_settings']:
                 title_lines.append(config['game_settings'])
             if config['game_mode']:
                 title_lines.append(config['game_mode'])
             
-            plt.suptitle('\n'.join(title_lines), 
-                        fontsize=20, fontweight='bold', 
-                        color='white', y=0.95)
+            if title_lines:
+                plt.suptitle('\n'.join(title_lines), 
+                           fontsize=20, fontweight='bold', 
+                           color='white', y=0.95)
             
-            # Legend
-            if config['smartphone_name'] or colors_used:
-                legend_elements = []
-                
-                if config['smartphone_name']:
-                    legend_elements.append(plt.Line2D([0], [0], color='white', label=config['smartphone_name']))
-                
-                for col_display, col_color in colors_used:
-                    legend_elements.append(plt.Line2D([0], [0], color='white', 
-                                                    linewidth=2.5, label=col_display))
-                
+            # Create legend
+            legend_elements = []
+            if config['smartphone_name']:
+                legend_elements.append(plt.Line2D([0], [0], color='white', 
+                                                label=config['smartphone_name'], linewidth=3))
+            
+            if fps_col:
+                legend_elements.append(plt.Line2D([0], [0], color=fps_color, 
+                                                linewidth=3, label='FPS'))
+            if cpu_col:
+                legend_elements.append(plt.Line2D([0], [0], color=cpu_color, 
+                                                linewidth=3, label='CPU Usage (%)'))
+            
+            if legend_elements:
                 legend = ax1.legend(handles=legend_elements, loc='upper right', 
                                   framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
                 legend.get_frame().set_facecolor('#262730')
@@ -396,15 +388,17 @@ class GamingPerformanceAnalyzer:
                     if config['smartphone_name'] and text.get_text() == config['smartphone_name']:
                         text.set_fontweight('bold')
             
-            # Remove spines for cleaner look
-            for ax in axes:
-                ax.spines['top'].set_visible(False)
-                ax.spines['bottom'].set_visible(False)
-                ax.spines['left'].set_visible(False)
-                if ax != ax1:
-                    ax.spines['right'].set_color(colors_used[axes.index(ax)-1][1] if axes.index(ax)-1 < len(colors_used) else 'white')
-                else:
-                    ax.spines['right'].set_visible(False)
+            # Clean up spines
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.spines['bottom'].set_color('white')
+            ax1.spines['left'].set_color(fps_color if fps_col else 'white')
+            
+            if cpu_col:
+                ax2.spines['top'].set_visible(False)
+                ax2.spines['left'].set_visible(False)
+                ax2.spines['right'].set_color(cpu_color)
+                ax2.spines['bottom'].set_color('white')
             
             plt.tight_layout()
             return fig
@@ -466,7 +460,7 @@ class GamingPerformanceAnalyzer:
         return stats
     
     def create_comparison_chart(self, config):
-        """Create comparison chart with both datasets"""
+        """Create comparison chart with FPS and CPU focus (dual y-axis)"""
         try:
             # Get data from both datasets
             data1 = self.processed_data if self.processed_data is not None else self.original_data
@@ -476,11 +470,20 @@ class GamingPerformanceAnalyzer:
                 st.error("❌ Need both datasets for comparison")
                 return None
             
-            # Get selected columns for plotting
-            selected_columns = config['selected_columns']
+            # Find FPS and CPU columns in both datasets
+            fps_col = None
+            cpu_col = None
             
-            if not selected_columns:
-                st.error("❌ No columns selected for plotting")
+            # Find common FPS and CPU columns
+            for col in self.numeric_columns:
+                if col in self.numeric_columns_2:
+                    if 'fps' in col.lower() and fps_col is None:
+                        fps_col = col
+                    elif 'cpu' in col.lower() and cpu_col is None:
+                        cpu_col = col
+            
+            if not fps_col and not cpu_col:
+                st.error("❌ No common FPS or CPU columns found between datasets")
                 return None
             
             # Create figure with dark theme
@@ -491,79 +494,57 @@ class GamingPerformanceAnalyzer:
             time_data1 = data1['TimeMinutes']
             time_data2 = data2['TimeMinutes']
             
-            # Create multiple y-axes for different metrics
-            axes = [ax1]
-            colors_used = []
+            # Plot FPS on primary axis (left)
+            if fps_col:
+                fps_data1 = data1[fps_col]
+                fps_data2 = data2[fps_col]
+                fps_color1 = '#00D4FF'  # Bright cyan for dataset 1
+                fps_color2 = '#0099CC'  # Darker cyan for dataset 2
+                
+                line1 = ax1.plot(time_data1, fps_data1, color=fps_color1, linewidth=3, 
+                               label=f'FPS - {config["device_name_1"]}', alpha=0.9, zorder=2)
+                line2 = ax1.plot(time_data2, fps_data2, color=fps_color2, linewidth=3, 
+                               linestyle='--', label=f'FPS - {config["device_name_2"]}', alpha=0.9, zorder=2)
+                
+                ax1.set_xlabel('Time (minutes)', fontsize=14, color='white', fontweight='bold')
+                ax1.set_ylabel('FPS', fontsize=14, color='#00D4FF', fontweight='bold')
+                ax1.tick_params(axis='y', labelcolor='#00D4FF', labelsize=12, colors='#00D4FF')
+                ax1.tick_params(axis='x', colors='white', labelsize=12)
+                
+                # Set FPS limits (0 to max + 10%)
+                fps_max = max(fps_data1.max(), fps_data2.max()) * 1.1 if not pd.isna(fps_data1.max()) and not pd.isna(fps_data2.max()) else 120
+                ax1.set_ylim(0, fps_max)
+                
+                # Add horizontal reference lines for FPS
+                ax1.axhline(y=60, color='green', linestyle='--', alpha=0.5, linewidth=1)
+                ax1.axhline(y=30, color='orange', linestyle='--', alpha=0.5, linewidth=1)
+                ax1.text(max(time_data1.iloc[-1], time_data2.iloc[-1]) * 0.02, 62, '60 FPS', color='green', fontsize=10)
+                ax1.text(max(time_data1.iloc[-1], time_data2.iloc[-1]) * 0.02, 32, '30 FPS', color='orange', fontsize=10)
             
-            for i, col in enumerate(selected_columns):
-                # Check if column exists in both datasets
-                if col not in data1.columns or col not in data2.columns:
-                    continue
+            # Plot CPU on secondary axis (right)
+            if cpu_col:
+                ax2 = ax1.twinx()
+                cpu_data1 = data1[cpu_col]
+                cpu_data2 = data2[cpu_col]
+                cpu_color1 = '#FF6B35'  # Bright orange for dataset 1
+                cpu_color2 = '#CC5529'  # Darker orange for dataset 2
                 
-                # Use appropriate axis
-                if i == 0:
-                    ax = ax1
-                else:
-                    ax = ax1.twinx()
-                    # Offset additional axes
-                    if i > 1:
-                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
-                    axes.append(ax)
+                line3 = ax2.plot(time_data1, cpu_data1, color=cpu_color1, linewidth=3, 
+                               label=f'CPU - {config["device_name_1"]}', alpha=0.9, zorder=1)
+                line4 = ax2.plot(time_data2, cpu_data2, color=cpu_color2, linewidth=3, 
+                               linestyle='--', label=f'CPU - {config["device_name_2"]}', alpha=0.9, zorder=1)
                 
-                col_data1 = data1[col]
-                col_data2 = data2[col]
-                col_color1 = config.get(f'{col}_color_1', self.get_column_color_suggestion(col, 1))
-                col_color2 = config.get(f'{col}_color_2', self.get_column_color_suggestion(col, 2))
-                col_display = self.get_column_display_name(col)
+                ax2.set_ylabel('CPU Usage (%)', fontsize=14, color='#FF6B35', fontweight='bold')
+                ax2.tick_params(axis='y', labelcolor='#FF6B35', labelsize=12, colors='#FF6B35')
                 
-                # Plot lines for both datasets
-                line1 = ax.plot(time_data1, col_data1, 
-                              color=col_color1, linewidth=2.5, 
-                              label=f"{col_display} - {config['device_name_1']}", 
-                              alpha=0.8, zorder=len(selected_columns)-i)
+                # Set CPU limits (0 to 100%)
+                ax2.set_ylim(0, 100)
                 
-                line2 = ax.plot(time_data2, col_data2, 
-                              color=col_color2, linewidth=2.5, linestyle='--',
-                              label=f"{col_display} - {config['device_name_2']}", 
-                              alpha=0.8, zorder=len(selected_columns)-i)
-                
-                # Configure axis
-                ax.set_ylabel(col_display, fontsize=12, color='white', fontweight='bold')
-                ax.tick_params(axis='y', colors='white', labelsize=10)
-                
-                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
-                try:
-                    max1 = col_data1.max() if not col_data1.empty and not pd.isna(col_data1.max()) else 0
-                    max2 = col_data2.max() if not col_data2.empty and not pd.isna(col_data2.max()) else 0
-                    
-                    # Handle NaN and Inf values
-                    if pd.isna(max1) or np.isinf(max1):
-                        max1 = 0
-                    if pd.isna(max2) or np.isinf(max2):
-                        max2 = 0
-                    
-                    combined_max = max(max1, max2, 1)  # Ensure at least 1 as minimum
-                    padding = combined_max * 0.1 if combined_max > 0 else 1
-                    
-                    final_max = combined_max + padding
-                    
-                    # Final safety check
-                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
-                        final_max = 100  # Default fallback
-                    
-                    ax.set_ylim(0, final_max)
-                    
-                except Exception as e:
-                    # Fallback to safe defaults
-                    ax.set_ylim(0, 100)
-                    if self.debug_mode:
-                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
-                
-                colors_used.append((col_display, col_color1, col_color2, config['device_name_1'], config['device_name_2']))
+                # Add horizontal reference line for CPU
+                ax2.axhline(y=80, color='red', linestyle='--', alpha=0.3, linewidth=1)
+                ax2.text(max(time_data1.iloc[-1], time_data2.iloc[-1]) * 0.02, 82, '80% CPU', color='red', fontsize=10)
             
-            # Configure primary axis
-            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-            ax1.tick_params(axis='x', colors='white', labelsize=10)
+            # Configure primary axis styling
             ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
             ax1.set_facecolor('#0E1117')
             
@@ -578,29 +559,38 @@ class GamingPerformanceAnalyzer:
                         fontsize=18, fontweight='bold', 
                         color='white', y=0.95)
             
-            # Legend
+            # Create legend
             legend_elements = []
-            for col_display, col_color1, col_color2, device1, device2 in colors_used:
-                legend_elements.append(plt.Line2D([0], [0], color='white', 
-                                                linewidth=2.5, label=f"{col_display} - {device1}"))
-                legend_elements.append(plt.Line2D([0], [0], color='white', 
-                                                linewidth=2.5, linestyle='--', label=f"{col_display} - {device2}"))
             
-            legend = ax1.legend(handles=legend_elements, loc='upper right', 
-                              framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
-            legend.get_frame().set_facecolor('#262730')
-            for text in legend.get_texts():
-                text.set_color('white')
+            if fps_col:
+                legend_elements.append(plt.Line2D([0], [0], color=fps_color1, 
+                                                linewidth=3, label=f'FPS - {config["device_name_1"]}'))
+                legend_elements.append(plt.Line2D([0], [0], color=fps_color2, 
+                                                linewidth=3, linestyle='--', label=f'FPS - {config["device_name_2"]}'))
+            if cpu_col:
+                legend_elements.append(plt.Line2D([0], [0], color=cpu_color1, 
+                                                linewidth=3, label=f'CPU - {config["device_name_1"]}'))
+                legend_elements.append(plt.Line2D([0], [0], color=cpu_color2, 
+                                                linewidth=3, linestyle='--', label=f'CPU - {config["device_name_2"]}'))
             
-            # Remove spines for cleaner look
-            for ax in axes:
-                ax.spines['top'].set_visible(False)
-                ax.spines['bottom'].set_visible(False)
-                ax.spines['left'].set_visible(False)
-                if ax != ax1:
-                    ax.spines['right'].set_color('white')
-                else:
-                    ax.spines['right'].set_visible(False)
+            if legend_elements:
+                legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                                  framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
+                legend.get_frame().set_facecolor('#262730')
+                for text in legend.get_texts():
+                    text.set_color('white')
+            
+            # Clean up spines
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.spines['bottom'].set_color('white')
+            ax1.spines['left'].set_color('#00D4FF' if fps_col else 'white')
+            
+            if cpu_col:
+                ax2.spines['top'].set_visible(False)
+                ax2.spines['left'].set_visible(False)
+                ax2.spines['right'].set_color('#FF6B35')
+                ax2.spines['bottom'].set_color('white')
             
             plt.tight_layout()
             return fig
@@ -984,42 +974,16 @@ def main():
                         
                         if analyzer.original_data is not None and analyzer.numeric_columns:
                             
-                            # Dynamic Column Selection
-                            st.subheader("📊 Select Metrics to Display")
+                            # Dynamic Column Selection - SIMPLIFIED TO FPS & CPU ONLY
+                            st.subheader("📊 Gaming Performance Chart")
+                            st.info("🎯 **Focus Mode**: Automatically displays FPS and CPU Usage for optimal gaming analysis")
                             
-                            with st.container():
-                                st.markdown('<div class="column-selector">', unsafe_allow_html=True)
-                                
-                                # Multi-select for columns
-                                default_columns = []
-                                for col in analyzer.numeric_columns[:4]:  # Select first 4 by default
-                                    default_columns.append(col)
-                                
-                                selected_columns = st.multiselect(
-                                    "Choose metrics to analyze:",
-                                    analyzer.numeric_columns,
-                                    default=default_columns,
-                                    help="Select one or more numeric columns to display on the chart"
-                                )
-                                
-                                if selected_columns:
-                                    st.write(f"**Selected metrics:** {', '.join([analyzer.get_column_display_name(col) for col in selected_columns])}")
-                                    
-                                    # Color and visibility controls for each selected column
-                                    st.write("**Customize appearance:**")
-                                    
-                                    chart_config = {
-                                        'game_title': game_title,
-                                        'game_settings': game_settings,
-                                        'game_mode': game_mode,
-                                        'smartphone_name': smartphone_name,
-                                        'selected_columns': selected_columns
-                                    }
-                                    
-                                    # Create columns for color pickers
-                                    color_cols = st.columns(min(len(selected_columns), 4))
-                                    
-                                    for i, col in enumerate(selected_columns):
+                            chart_config = {
+                                'game_title': game_title,
+                                'game_settings': game_settings,
+                                'game_mode': game_mode,
+                                'smartphone_name': smartphone_name
+                            } enumerate(selected_columns):
                                         col_display = analyzer.get_column_display_name(col)
                                         suggested_color = analyzer.get_column_color_suggestion(col, 1)
                                         
@@ -1100,8 +1064,20 @@ def main():
             if uploaded_file is not None and analyzer.original_data is not None:
                 st.subheader("📈 Performance Statistics")
                 
-                if 'selected_columns' in locals() and selected_columns:
-                    stats = analyzer.get_performance_stats(selected_columns)
+                if 'selected_columns' in locals() and analyzer.original_data is not None:
+                    # Find FPS and CPU columns for stats
+                    fps_col = None
+                    cpu_col = None
+                    for col in analyzer.numeric_columns:
+                        if 'fps' in col.lower() and fps_col is None:
+                            fps_col = col
+                        elif 'cpu' in col.lower() and cpu_col is None:
+                            cpu_col = col
+                    
+                    available_columns = [col for col in [fps_col, cpu_col] if col is not None]
+                    
+                    if available_columns:
+                        stats = analyzer.get_performance_stats(available_columns)
                     
                     # Show grade if FPS is available
                     if any('fps' in col.lower() for col in selected_columns) and 'grade' in stats:
