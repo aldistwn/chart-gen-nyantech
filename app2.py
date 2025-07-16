@@ -278,6 +278,193 @@ class GamingPerformanceAnalyzer:
         
         return True
     
+    def create_performance_chart(self, config):
+        """Create performance chart with dynamic axes (single dataset)"""
+        try:
+            data = self.processed_data if self.processed_data is not None else self.original_data
+            
+            if data is None:
+                st.error("❌ No data available for chart generation")
+                return None
+            
+            # Get selected columns for plotting
+            selected_columns = [col for col in config['selected_columns'] if not config.get(f'hide_{col}', False)]
+            
+            if not selected_columns:
+                st.error("❌ No columns selected for plotting")
+                return None
+            
+            # Create figure with dark theme
+            plt.style.use('dark_background')
+            fig, ax1 = plt.subplots(figsize=(16, 9))
+            fig.patch.set_facecolor('#0E1117')
+            
+            time_data = data['TimeMinutes']
+            
+            # Create multiple y-axes for different metrics
+            axes = [ax1]
+            colors_used = []
+            
+            for i, col in enumerate(selected_columns):
+                if col not in data.columns or col not in self.numeric_columns:
+                    continue
+                
+                # Use appropriate axis
+                if i == 0:
+                    ax = ax1
+                else:
+                    ax = ax1.twinx()
+                    # Offset additional axes
+                    if i > 1:
+                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
+                    axes.append(ax)
+                
+                col_data = data[col]
+                col_color = config.get(f'{col}_color', self.get_column_color_suggestion(col, 1))
+                col_display = self.get_column_display_name(col)
+                
+                # Plot the line
+                line = ax.plot(time_data, col_data, 
+                              color=col_color, linewidth=2.5, 
+                              label=col_display, alpha=0.8, zorder=len(selected_columns)-i)
+                
+                # Configure axis
+                ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
+                ax.tick_params(axis='y', colors='white', labelsize=10)
+                
+                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
+                try:
+                    data_max = col_data.max() if not col_data.empty and not pd.isna(col_data.max()) else 0
+                    
+                    # Handle NaN and Inf values
+                    if pd.isna(data_max) or np.isinf(data_max):
+                        data_max = 100  # Default fallback
+                    
+                    if data_max <= 0:
+                        data_max = 100  # Ensure positive value
+                    
+                    padding = data_max * 0.1
+                    final_max = data_max + padding
+                    
+                    # Final safety check
+                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
+                        final_max = 100  # Default fallback
+                    
+                    ax.set_ylim(0, final_max)
+                    
+                except Exception as e:
+                    # Fallback to safe defaults
+                    ax.set_ylim(0, 100)
+                    if self.debug_mode:
+                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
+                
+                colors_used.append((col_display, col_color))
+            
+            # Configure primary axis
+            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
+            ax1.tick_params(axis='x', colors='white', labelsize=10)
+            ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
+            ax1.set_facecolor('#0E1117')
+            
+            # Title
+            title_lines = [config['game_title']]
+            if config['game_settings']:
+                title_lines.append(config['game_settings'])
+            if config['game_mode']:
+                title_lines.append(config['game_mode'])
+            
+            plt.suptitle('\n'.join(title_lines), 
+                        fontsize=20, fontweight='bold', 
+                        color='white', y=0.95)
+            
+            # Legend
+            if config['smartphone_name'] or colors_used:
+                legend_elements = []
+                
+                if config['smartphone_name']:
+                    legend_elements.append(plt.Line2D([0], [0], color='white', label=config['smartphone_name']))
+                
+                for col_display, col_color in colors_used:
+                    legend_elements.append(plt.Line2D([0], [0], color='white', 
+                                                    linewidth=2.5, label=col_display))
+                
+                legend = ax1.legend(handles=legend_elements, loc='upper right', 
+                                  framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
+                legend.get_frame().set_facecolor('#262730')
+                for text in legend.get_texts():
+                    text.set_color('white')
+                    if config['smartphone_name'] and text.get_text() == config['smartphone_name']:
+                        text.set_fontweight('bold')
+            
+            # Remove spines for cleaner look
+            for ax in axes:
+                ax.spines['top'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                if ax != ax1:
+                    ax.spines['right'].set_color(colors_used[axes.index(ax)-1][1] if axes.index(ax)-1 < len(colors_used) else 'white')
+                else:
+                    ax.spines['right'].set_visible(False)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            st.error(f"❌ Chart generation failed: {str(e)}")
+            return None
+    
+    def get_performance_stats(self, selected_columns=None):
+        """Calculate performance statistics for selected columns (single dataset)"""
+        if self.original_data is None:
+            return {}
+        
+        data = self.processed_data if self.processed_data is not None else self.original_data
+        
+        if selected_columns is None:
+            selected_columns = self.numeric_columns
+        
+        stats = {
+            'duration': len(data) / 60,
+            'total_frames': len(data),
+            'removed_frames': len(self.removed_indices)
+        }
+        
+        # Calculate stats for each selected column
+        for col in selected_columns:
+            if col not in data.columns or col not in self.numeric_columns:
+                continue
+                
+            col_data = data[col]
+            col_display = self.get_column_display_name(col)
+            
+            stats[f'{col}_avg'] = col_data.mean()
+            stats[f'{col}_min'] = col_data.min()
+            stats[f'{col}_max'] = col_data.max()
+            stats[f'{col}_std'] = col_data.std()
+            stats[f'{col}_display'] = col_display
+            
+            # Special calculations for FPS
+            if 'fps' in col.lower():
+                stats['fps_60_plus'] = (col_data >= 60).sum() / len(col_data) * 100
+                stats['frame_drops'] = (col_data < 30).sum()
+                
+                # Performance grading based on FPS
+                avg_fps = col_data.mean()
+                if avg_fps >= 90:
+                    stats['grade'] = "🏆 Excellent"
+                    stats['grade_color'] = "green"
+                elif avg_fps >= 60:
+                    stats['grade'] = "✅ Good"
+                    stats['grade_color'] = "blue"
+                elif avg_fps >= 30:
+                    stats['grade'] = "⚠️ Playable"
+                    stats['grade_color'] = "orange"
+                else:
+                    stats['grade'] = "❌ Poor"
+                    stats['grade_color'] = "red"
+        
+        return stats
+    
     def create_comparison_chart(self, config):
         """Create comparison chart with both datasets"""
         try:
@@ -610,12 +797,12 @@ def main():
                                 outlier_threshold = 1.5
                     
                     # Process datasets
-                    if 'process_dataset1' in locals() and process_dataset1:
+                    if process_dataset1:
                         analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 1)
                     else:
                         analyzer.processed_data = analyzer.original_data.copy()
                     
-                    if 'process_dataset2' in locals() and process_dataset2:
+                    if process_dataset2:
                         analyzer.remove_outliers(outlier_method, outlier_threshold, selected_columns, 2)
                     else:
                         analyzer.processed_data_2 = analyzer.original_data_2.copy()
@@ -752,7 +939,7 @@ def main():
             st.info("📊 Loading datasets...")
     
     else:
-        # Single CSV Analysis Mode (existing code)
+        # Single CSV Analysis Mode
         # Sidebar configuration
         with st.sidebar:
             st.header("🎮 Game Configuration")
@@ -879,7 +1066,7 @@ def main():
                                 processed = False
                                 
                                 # Priority 1: Advanced outlier removal (if enabled)
-                                if 'enable_advanced_outlier' in locals() and enable_advanced_outlier and 'outlier_columns' in locals():
+                                if enable_advanced_outlier and outlier_columns:
                                     with st.spinner('🔧 Applying advanced outlier removal...'):
                                         analyzer.remove_outliers(advanced_outlier_method, advanced_outlier_threshold, outlier_columns, 1)
                                         processed = True
@@ -978,198 +1165,6 @@ def main():
                     st.info("📊 Select metrics from the main panel to see statistics")
             else:
                 st.info("📤 Upload CSV file to see performance statistics")
-    
-    # Add missing methods for single dataset compatibility
-    def create_performance_chart(self, config):
-        """Create performance chart with dynamic axes (single dataset)"""
-        try:
-            data = self.processed_data if self.processed_data is not None else self.original_data
-            
-            if data is None:
-                st.error("❌ No data available for chart generation")
-                return None
-            
-            # Get selected columns for plotting
-            selected_columns = [col for col in config['selected_columns'] if not config.get(f'hide_{col}', False)]
-            
-            if not selected_columns:
-                st.error("❌ No columns selected for plotting")
-                return None
-            
-            # Create figure with dark theme
-            plt.style.use('dark_background')
-            fig, ax1 = plt.subplots(figsize=(16, 9))
-            fig.patch.set_facecolor('#0E1117')
-            
-            time_data = data['TimeMinutes']
-            
-            # Create multiple y-axes for different metrics
-            axes = [ax1]
-            colors_used = []
-            
-            for i, col in enumerate(selected_columns):
-                if col not in data.columns or col not in self.numeric_columns:
-                    continue
-                
-                # Use appropriate axis
-                if i == 0:
-                    ax = ax1
-                else:
-                    ax = ax1.twinx()
-                    # Offset additional axes
-                    if i > 1:
-                        ax.spines['right'].set_position(('outward', 60 * (i-1)))
-                    axes.append(ax)
-                
-                col_data = data[col]
-                col_color = config.get(f'{col}_color', self.get_column_color_suggestion(col, 1))
-                col_display = self.get_column_display_name(col)
-                
-                # Plot the line
-                line = ax.plot(time_data, col_data, 
-                              color=col_color, linewidth=2.5, 
-                              label=col_display, alpha=0.8, zorder=len(selected_columns)-i)
-                
-                # Configure axis
-                ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
-                ax.tick_params(axis='y', colors='white', labelsize=10)
-                
-                # Set appropriate limits with 0 as minimum - with NaN/Inf protection
-                try:
-                    data_max = col_data.max() if not col_data.empty and not pd.isna(col_data.max()) else 0
-                    
-                    # Handle NaN and Inf values
-                    if pd.isna(data_max) or np.isinf(data_max):
-                        data_max = 100  # Default fallback
-                    
-                    if data_max <= 0:
-                        data_max = 100  # Ensure positive value
-                    
-                    padding = data_max * 0.1
-                    final_max = data_max + padding
-                    
-                    # Final safety check
-                    if pd.isna(final_max) or np.isinf(final_max) or final_max <= 0:
-                        final_max = 100  # Default fallback
-                    
-                    ax.set_ylim(0, final_max)
-                    
-                except Exception as e:
-                    # Fallback to safe defaults
-                    ax.set_ylim(0, 100)
-                    if self.debug_mode:
-                        st.write(f"⚠️ Used fallback limits for {col}: {str(e)}")
-                
-                colors_used.append((col_display, col_color))
-            
-            # Configure primary axis
-            ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-            ax1.tick_params(axis='x', colors='white', labelsize=10)
-            ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
-            ax1.set_facecolor('#0E1117')
-            
-            # Title
-            title_lines = [config['game_title']]
-            if config['game_settings']:
-                title_lines.append(config['game_settings'])
-            if config['game_mode']:
-                title_lines.append(config['game_mode'])
-            
-            plt.suptitle('\n'.join(title_lines), 
-                        fontsize=20, fontweight='bold', 
-                        color='white', y=0.95)
-            
-            # Legend
-            if config['smartphone_name'] or colors_used:
-                legend_elements = []
-                
-                if config['smartphone_name']:
-                    legend_elements.append(plt.Line2D([0], [0], color='white', label=config['smartphone_name']))
-                
-                for col_display, col_color in colors_used:
-                    legend_elements.append(plt.Line2D([0], [0], color='white', 
-                                                    linewidth=2.5, label=col_display))
-                
-                legend = ax1.legend(handles=legend_elements, loc='upper right', 
-                                  framealpha=0.9, fancybox=True, bbox_to_anchor=(1.0, 1.0))
-                legend.get_frame().set_facecolor('#262730')
-                for text in legend.get_texts():
-                    text.set_color('white')
-                    if config['smartphone_name'] and text.get_text() == config['smartphone_name']:
-                        text.set_fontweight('bold')
-            
-            # Remove spines for cleaner look
-            for ax in axes:
-                ax.spines['top'].set_visible(False)
-                ax.spines['bottom'].set_visible(False)
-                ax.spines['left'].set_visible(False)
-                if ax != ax1:
-                    ax.spines['right'].set_color(colors_used[axes.index(ax)-1][1] if axes.index(ax)-1 < len(colors_used) else 'white')
-                else:
-                    ax.spines['right'].set_visible(False)
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            st.error(f"❌ Chart generation failed: {str(e)}")
-            return None
-    
-    def get_performance_stats(self, selected_columns=None):
-        """Calculate performance statistics for selected columns (single dataset)"""
-        if self.original_data is None:
-            return {}
-        
-        data = self.processed_data if self.processed_data is not None else self.original_data
-        
-        if selected_columns is None:
-            selected_columns = self.numeric_columns
-        
-        stats = {
-            'duration': len(data) / 60,
-            'total_frames': len(data),
-            'removed_frames': len(self.removed_indices)
-        }
-        
-        # Calculate stats for each selected column
-        for col in selected_columns:
-            if col not in data.columns or col not in self.numeric_columns:
-                continue
-                
-            col_data = data[col]
-            col_display = self.get_column_display_name(col)
-            
-            stats[f'{col}_avg'] = col_data.mean()
-            stats[f'{col}_min'] = col_data.min()
-            stats[f'{col}_max'] = col_data.max()
-            stats[f'{col}_std'] = col_data.std()
-            stats[f'{col}_display'] = col_display
-            
-            # Special calculations for FPS
-            if 'fps' in col.lower():
-                stats['fps_60_plus'] = (col_data >= 60).sum() / len(col_data) * 100
-                stats['frame_drops'] = (col_data < 30).sum()
-                
-                # Performance grading based on FPS
-                avg_fps = col_data.mean()
-                if avg_fps >= 90:
-                    stats['grade'] = "🏆 Excellent"
-                    stats['grade_color'] = "green"
-                elif avg_fps >= 60:
-                    stats['grade'] = "✅ Good"
-                    stats['grade_color'] = "blue"
-                elif avg_fps >= 30:
-                    stats['grade'] = "⚠️ Playable"
-                    stats['grade_color'] = "orange"
-                else:
-                    stats['grade'] = "❌ Poor"
-                    stats['grade_color'] = "red"
-        
-        return stats
-    
-    # Add the missing methods to the analyzer class
-    analyzer.create_performance_chart = create_performance_chart.__get__(analyzer, GamingPerformanceAnalyzer)
-    analyzer.get_performance_stats = get_performance_stats.__get__(analyzer, GamingPerformanceAnalyzer)
     
     # Documentation
     with st.expander("📋 CSV Comparison Features"):
