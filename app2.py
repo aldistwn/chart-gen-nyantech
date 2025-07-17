@@ -17,7 +17,8 @@ st.set_page_config(
 )
 
 class GamingPerformanceAnalyzer:
-    def __init__(self):
+    def __init__(self, fps_setting=60):
+        self.selected_fps_setting = fps_setting
         self.original_data = None
         self.processed_data = None
         self.removed_indices = []
@@ -95,6 +96,21 @@ class GamingPerformanceAnalyzer:
         if len(self.numeric_columns) < 1:
             st.error("❌ No numeric columns found for analysis")
             return False
+
+        # Tambahkan kolom TimeMinutes berdasarkan FPS yang dipilih user
+        processed_df['TimeMinutes'] = np.arange(len(processed_df)) / self.selected_fps_setting
+        self.original_data = processed_df.reset_index(drop=True)
+
+        if self.debug_mode:
+            st.write(f"✅ **Final data check**:")
+            st.write(f"   - Total rows: {len(processed_df)}")
+            st.write(f"   - Numeric columns: {self.numeric_columns}")
+            st.write(f"   - All columns: {list(processed_df.columns)}")
+
+        st.success(f"✅ Data loaded successfully using delimiter '{delimiter}' and encoding '{encoding}'")
+
+        return True
+
         
         # Remove rows where ALL numeric columns are NaN
         numeric_data_only = processed_df[self.numeric_columns]
@@ -113,7 +129,7 @@ class GamingPerformanceAnalyzer:
         clean_data = processed_df[valid_mask].copy().reset_index(drop=True)
         
         # Add time column
-        clean_data['TimeMinutes'] = np.arange(len(clean_data)) / 60
+        cclean_data['TimeMinutes'] = np.arange(len(clean_data)) / selected_fps_setting
         
         self.original_data = clean_data
         
@@ -557,7 +573,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # Initialize analyzer
-    analyzer = GamingPerformanceAnalyzer()
+    analyzer = GamingPerformanceAnalyzer(fps_setting=selected_fps_setting)
     
     # Sidebar configuration
     with st.sidebar:
@@ -567,6 +583,12 @@ def main():
         game_settings = st.text_input("⚙️ Graphics Settings", value="Ultra - 120 FPS")
         game_mode = st.text_input("🚀 Performance Mode", value="Game Boost Mode")
         smartphone_name = st.text_input("📱 Device Model", value="iPhone 15 Pro Max")
+
+        st.header("🕹️ FPS Setting")
+        fps_options = [30, 60, 90, 120, 144]
+        selected_fps_setting = st.selectbox("🎮 Pilih FPS Game yang Digunakan", fps_options, index=3)
+        st.write(f"✅ Kamu memilih: {selected_fps_setting} FPS")
+
         
         st.divider()
         
