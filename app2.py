@@ -86,14 +86,7 @@ class GamingPerformanceAnalyzer:
                 if self.debug_mode:
                     st.write(f"📝 **Text/invalid column**: `{col}` (Sample: {df[col].iloc[0] if len(df) > 0 else 'N/A'})")
 
-                if self.debug_mode:
-                    st.write(f"✅ **Numeric column**: `{col}` (Range: {numeric_data.min():.1f} - {numeric_data.max():.1f})")
-            else:
-                # Keep as text/categorical data
-                processed_df[col] = df[col]
-                if self.debug_mode:
-                    st.write(f"📝 **Text column**: `{col}` (Sample: {df[col].iloc[0] if len(df) > 0 else 'N/A'})")
-        
+                     
         if len(self.numeric_columns) < 1:
             st.error("❌ No numeric columns found for analysis")
             return False
