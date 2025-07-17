@@ -26,21 +26,25 @@ class GamingPerformanceAnalyzer:
         self.numeric_columns = []
     
     def load_csv_data(self, file_data, filename):
-        """Load and validate CSV data with smart encoding detection"""
+        """Load and validate CSV data with smart encoding & flexible delimiter detection"""
         try:
-            # Deteksi encoding otomatis pakai chardet
+            # Deteksi encoding
             encoding_guess = chardet.detect(file_data)['encoding']
             if self.debug_mode:
                 st.write(f"🔍 Detected encoding: {encoding_guess}")
-
-            # Coba beberapa delimiter
-            delimiters = [',', ';', '\t', '|']
+            
+            # Daftar delimiter umum + spasi regex
+            delimiters = [',', ';', '\t', '|', r'\s+']  # tambahin \s+ buat file raw pakai spasi
+    
             for delimiter in delimiters:
                 try:
-                    # Baca langsung dari BytesIO + encoding hasil deteksi
-                    df = pd.read_csv(io.BytesIO(file_data), encoding=encoding_guess, delimiter=delimiter)
-
-                    # Validasi kolom
+                    # Kalau delimiter spasi (\s+), pakai engine='python'
+                    if delimiter == r'\s+':
+                        df = pd.read_csv(io.BytesIO(file_data), delimiter=delimiter, engine='python', encoding=encoding_guess)
+                    else:
+                        df = pd.read_csv(io.BytesIO(file_data), delimiter=delimiter, encoding=encoding_guess)
+                    
+                    # Validasi awal
                     if len(df.columns) > 1 and len(df) > 0:
                         if self._validate_and_process_columns(df, delimiter, encoding_guess):
                             return True
@@ -48,11 +52,12 @@ class GamingPerformanceAnalyzer:
                     if self.debug_mode:
                         st.write(f"Debug: Failed {encoding_guess} + {delimiter}: {str(e)}")
                     continue
-
-            st.error("❌ Gagal baca CSV. Coba cek format/encoding file.")
+    
+            st.error("❌ Gagal membaca CSV. Format atau delimiter tidak dikenali.")
             return False
+    
         except Exception as e:
-            st.error(f"❌ Error baca file: {str(e)}")
+            st.error(f"❌ Error saat parsing file: {str(e)}")
             return False
     
     def _validate_and_process_columns(self, df, delimiter, encoding):
