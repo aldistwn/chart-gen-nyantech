@@ -70,12 +70,22 @@ class GamingPerformanceAnalyzer:
             # Try to convert to numeric
             numeric_data = pd.to_numeric(df[col], errors='coerce')
             
-            # Check if at least 50% of data is numeric and not all NaN
+            # Ganti semua nilai negatif ekstrem (kayak -1, -9999) jadi NaN → biar ga ganggu chart
+            numeric_data = numeric_data.where(numeric_data >= 0)
+            
+            # Check if at least 50% of data is valid numeric
             valid_numeric_ratio = (~numeric_data.isna()).sum() / len(df)
             
-            if valid_numeric_ratio >= 0.5 and not numeric_data.isna().all():
+            if valid_numeric_ratio >= 0.5 and not numeric_data.isna().all() and np.isfinite(numeric_data.max()):
                 processed_df[col] = numeric_data
                 self.numeric_columns.append(col)
+                if self.debug_mode:
+                    st.write(f"✅ **Numeric column**: `{col}` (Range: {numeric_data.min():.1f} - {numeric_data.max():.1f})")
+            else:
+                processed_df[col] = df[col]
+                if self.debug_mode:
+                    st.write(f"📝 **Text/invalid column**: `{col}` (Sample: {df[col].iloc[0] if len(df) > 0 else 'N/A'})")
+
                 if self.debug_mode:
                     st.write(f"✅ **Numeric column**: `{col}` (Range: {numeric_data.min():.1f} - {numeric_data.max():.1f})")
             else:
@@ -318,9 +328,14 @@ class GamingPerformanceAnalyzer:
                 ax.tick_params(axis='y', colors='white', labelsize=10)
                 
                 # Set appropriate limits with 0 as minimum
-                data_max = col_data.max()
-                padding = data_max * 0.1
-                ax.set_ylim(0, data_max + padding)
+                if np.isfinite(col_data.max()) and not col_data.dropna().empty:
+                    data_max = col_data.max()
+                    padding = data_max * 0.1
+                    ax.set_ylim(0, data_max + padding)
+                else:
+                    st.warning(f"⚠️ Skipping `{col}` because it contains no valid data.")
+                    continue  # skip plotting this column
+
                 
                 colors_used.append((col_display, col_color))
             
