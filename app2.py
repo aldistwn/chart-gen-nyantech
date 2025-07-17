@@ -3,10 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import io
-import chardet
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+import chardet
 
 # Page configuration
 st.set_page_config(
