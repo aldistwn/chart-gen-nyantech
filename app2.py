@@ -574,6 +574,9 @@ def main():
     
     # Initialize analyzer
     analyzer = GamingPerformanceAnalyzer(fps_setting=selected_fps_setting)
+
+    selected_fps_setting = st.selectbox("🎮 Pilih FPS Game yang Digunakan", [30, 60, 90, 120, 144], index=3)
+    st.write(f"✅ FPS setting: {selected_fps_setting} FPS")
     
     # Sidebar configuration
     with st.sidebar:
