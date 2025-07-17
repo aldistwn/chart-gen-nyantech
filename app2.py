@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import io
+import chardet
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
@@ -25,29 +26,33 @@ class GamingPerformanceAnalyzer:
         self.numeric_columns = []
     
     def load_csv_data(self, file_data, filename):
-        """Load and validate CSV data with multiple format support"""
+        """Load and validate CSV data with smart encoding detection"""
         try:
-            # Try multiple encoding and delimiter combinations
+            # Deteksi encoding otomatis pakai chardet
+            encoding_guess = chardet.detect(file_data)['encoding']
+            if self.debug_mode:
+                st.write(f"🔍 Detected encoding: {encoding_guess}")
+
+            # Coba beberapa delimiter
             delimiters = [',', ';', '\t', '|']
-            encodings = ['utf-8', 'latin-1', 'cp1252']
-            
-            for encoding in encodings:
-                for delimiter in delimiters:
-                    try:
-                        df = pd.read_csv(io.StringIO(file_data.decode(encoding)), delimiter=delimiter)
-                        if len(df.columns) > 1 and len(df) > 0:
-                            if self._validate_and_process_columns(df, delimiter, encoding):
-                                return True
-                    except Exception as e:
-                        if self.debug_mode:
-                            st.write(f"Debug: Failed {encoding} + {delimiter}: {str(e)}")
-                        continue
-            
-            st.error("❌ Could not parse CSV file. Please check the format.")
+            for delimiter in delimiters:
+                try:
+                    # Baca langsung dari BytesIO + encoding hasil deteksi
+                    df = pd.read_csv(io.BytesIO(file_data), encoding=encoding_guess, delimiter=delimiter)
+
+                    # Validasi kolom
+                    if len(df.columns) > 1 and len(df) > 0:
+                        if self._validate_and_process_columns(df, delimiter, encoding_guess):
+                            return True
+                except Exception as e:
+                    if self.debug_mode:
+                        st.write(f"Debug: Failed {encoding_guess} + {delimiter}: {str(e)}")
+                    continue
+
+            st.error("❌ Gagal baca CSV. Coba cek format/encoding file.")
             return False
-            
         except Exception as e:
-            st.error(f"❌ Error loading CSV: {str(e)}")
+            st.error(f"❌ Error baca file: {str(e)}")
             return False
     
     def _validate_and_process_columns(self, df, delimiter, encoding):
