@@ -326,19 +326,15 @@ class GamingPerformanceAnalyzer:
             return None, None
         if selected_columns is None:
             selected_columns = self.numeric_columns
-    
-        # Use the user-selected FPS
+        # Use the user-selected FPS setting for frame calculation
         fps = self.selected_fps_setting
-    
         shadow_table = pd.DataFrame({
             'Frame': range(1, len(data) + 1),
             'Time': (data.index / fps / 60).round(4)
         })
-    
         for col in selected_columns:
             if col in data.columns and col in self.numeric_columns:
                 shadow_table[col] = data[col].round(1)
-
         return shadow_table, fps
 
     def export_processed_data(self, game_title, selected_columns=None):
@@ -459,7 +455,7 @@ def main():
                 if stats['removed_frames'] > 0:
                     st.metric("🚫 Removed Frames", f"{stats['removed_frames']}")
                 st.subheader("💾 Export Options")
-                # Chart export
+                # Chart export (transparent background)
                 if 'chart_fig' in locals() and chart_fig:
                     img_buffer = io.BytesIO()
                     chart_fig.savefig(
@@ -475,8 +471,8 @@ def main():
                         mime="image/png",
                         use_container_width=True
                     )
-                # Shadow table preview and export
-                shadow_table, detected_fps = analyzer.create_shadow_table(selected_columns)
+                # Shadow table preview and export (using selected FPS)
+                shadow_table, selected_fps = analyzer.create_shadow_table(selected_columns)
                 if shadow_table is not None:
                     st.subheader("🎬 Video Chart Table")
                     st.info(f"📹 **Exported Frame Rate**: {selected_fps} FPS (matches your selected setting)")
