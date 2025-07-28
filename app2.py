@@ -330,7 +330,7 @@ class GamingPerformanceAnalyzer:
         fps = self.selected_fps_setting
         shadow_table = pd.DataFrame({
             'Frame': range(1, len(data) + 1),
-            'Time': (data.index / fps / 60).round(4)
+            'Time': (data.index / 60).round(4)
         })
         for col in selected_columns:
             if col in data.columns and col in self.numeric_columns:
