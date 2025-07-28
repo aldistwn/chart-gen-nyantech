@@ -474,7 +474,7 @@ def main():
                 if 'chart_fig' in locals() and chart_fig:
                     img_buffer = io.BytesIO()
                     chart_fig.savefig(
-                        img_buffer, format='png', dpi=300, bbox_inches='tight', facecolor='#0E1117'
+                        img_buffer, format='png', dpi=300, bbox_inches='tight', transparent=True
                     )
                     img_buffer.seek(0)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
