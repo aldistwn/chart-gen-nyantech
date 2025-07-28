@@ -326,31 +326,20 @@ class GamingPerformanceAnalyzer:
             return None, None
         if selected_columns is None:
             selected_columns = self.numeric_columns
-        total_frames = len(data)
-        total_time_minutes = data['TimeMinutes'].max()
-        if total_time_minutes > 0:
-            frames_per_minute = total_frames / total_time_minutes
-            estimated_fps = frames_per_minute / 60
-            if estimated_fps <= 35:
-                detected_fps = 30
-            elif estimated_fps <= 65:
-                detected_fps = 60
-            elif estimated_fps <= 95:
-                detected_fps = 90
-            elif estimated_fps <= 125:
-                detected_fps = 120
-            else:
-                detected_fps = int(estimated_fps)
-        else:
-            detected_fps = 60
+    
+        # Use the user-selected FPS
+        fps = self.selected_fps_setting
+    
         shadow_table = pd.DataFrame({
             'Frame': range(1, len(data) + 1),
-            'Time': (data.index / detected_fps / 60).round(4)
+            'Time': (data.index / fps / 60).round(4)
         })
+    
         for col in selected_columns:
             if col in data.columns and col in self.numeric_columns:
                 shadow_table[col] = data[col].round(1)
-        return shadow_table, detected_fps
+
+        return shadow_table, fps
 
     def export_processed_data(self, game_title, selected_columns=None):
         data = self.processed_data if self.processed_data is not None else self.original_data
@@ -490,7 +479,7 @@ def main():
                 shadow_table, detected_fps = analyzer.create_shadow_table(selected_columns)
                 if shadow_table is not None:
                     st.subheader("🎬 Video Chart Table")
-                    st.info(f"📹 **Detected Frame Rate**: {detected_fps} FPS")
+                    st.info(f"📹 **Exported Frame Rate**: {selected_fps} FPS (matches your selected setting)")
                     with st.expander("👀 Preview Video Chart Data (First 10 rows)"):
                         st.dataframe(shadow_table.head(10), use_container_width=True)
                     shadow_csv = shadow_table.to_csv(index=False)
