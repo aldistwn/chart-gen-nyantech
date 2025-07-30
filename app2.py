@@ -6,10 +6,87 @@ import io
 from datetime import datetime
 import warnings
 import chardet
+import csv
 
 warnings.filterwarnings('ignore')
 
 # --- Helper Functions ---
+
+def csv_restorer_streamlit():
+    st.header("🛠️ CSV Restorer")
+    st.write("Restore malformed CSV files to proper format with correct delimiters and alignment.")
+
+    uploaded_file = st.file_uploader("Upload CSV to Restore", type=["csv"])
+    if uploaded_file:
+        lines = uploaded_file.getvalue().decode("utf-8").splitlines()
+        preview = "\n".join(lines[:10])
+        st.subheader("Input Preview (first 10 rows):")
+        st.text_area("Input Preview", preview, height=200)
+
+        reader = csv.reader(lines)
+        all_rows = list(reader)
+
+        if len(all_rows) > 1:
+            header = all_rows[0]
+            first_row = all_rows[1]
+            if len(header) != len(first_row):
+                st.warning(f"Header has {len(header)} fields, first row has {len(first_row)} fields.")
+            else:
+                st.success("CSV structure looks OK.")
+
+        if st.button("Restore CSV"):
+            new_header = [
+                "FPS", "JANK", "BigJANK", "Max FrameTime(ms)", "CPU(%)", "CPU0(%)", "CPU1(%)", "CPU2(%)", "CPU3(%)", 
+                "CPU4(%)", "CPU5(%)", "CPU6(%)", "CPU7(%)", "CPU0(MHz)", "CPU1(MHz)", "CPU2(MHz)", "CPU3(MHz)", 
+                "CPU4(MHz)", "CPU5(MHz)", "CPU6(MHz)", "CPU7(MHz)", "CPU(°C)", "", "DDR(MHz)", "GPU(%)", "", "GPU(KHz)",
+                "Battery(%)", "Battery(°C)", "Battery(mA)", "Battery(volt)"
+            ]
+            processed_rows = [new_header]
+            for row in all_rows[1:]:
+                if not row or len(row) < 29:
+                    continue
+                new_row = []
+                for j in range(3):
+                    new_row.append(row[j] if j < len(row) else '')
+                if 3 < len(row) and 4 < len(row):
+                    new_row.append(f"{row[3]}.{row[4]}")
+                else:
+                    new_row.append(row[3] if 3 < len(row) else '0')
+                for j in range(9):
+                    if 5 + j < len(row) and 14 + j < len(row):
+                        new_row.append(f"{row[5 + j]}.{row[14 + j]}")
+                    else:
+                        new_row.append(row[5 + j] if 5 + j < len(row) else '0')
+                for j in range(8):
+                    if 23 + j < len(row):
+                        new_row.append(row[23 + j])
+                    else:
+                        new_row.append('0')
+                new_row.append(row[31] if 31 < len(row) else '0')
+                new_row.append('0')
+                new_row.append(row[32] if 32 < len(row) else '0')
+                new_row.append(row[33] if 33 < len(row) else '-1')
+                new_row.append('0')
+                new_row.append(row[34] if 34 < len(row) else '-1')
+                new_row.append(row[35] if 35 < len(row) else '0')
+                if 36 < len(row) and 37 < len(row):
+                    new_row.append(f"{row[36]}.{row[37]}")
+                else:
+                    new_row.append(row[36] if 36 < len(row) else '0')
+                new_row.append(row[38] if 38 < len(row) else '0')
+                battery_volt = row[39] if 39 < len(row) else '0'
+                battery_volt = battery_volt.replace(',', '.')
+                new_row.append(battery_volt)
+                processed_rows.append(new_row)
+            preview_text = "\n".join([",".join(row) for row in processed_rows[:10]])
+            st.subheader("Output Preview (first 10 rows):")
+            st.text_area("Output Preview", preview_text, height=200)
+            output_csv = io.StringIO()
+            writer = csv.writer(output_csv)
+            writer.writerows(processed_rows)
+            output_csv.seek(0)
+            st.download_button("Download Restored CSV", data=output_csv.getvalue(), file_name="restored.csv", mime="text/csv")
+            st.success(f"Restoration complete! Processed {len(processed_rows)-1} rows.")
 
 def render_main_header():
     st.markdown("""
@@ -356,7 +433,15 @@ class GamingPerformanceAnalyzer:
 
 # --- Main App Logic ---
 def main():
+    st.set_page_config(page_title="Gaming Performance Analyzer", layout="wide")
     render_main_header()
+    menu = st.sidebar.radio("Select Menu", ["Analyzer", "CSV Restorer"])
+    if menu == "Analyzer":
+        # Your existing analyzer logic (leave unchanged)
+        ...
+    elif menu == "CSV Restorer":
+        csv_restorer_streamlit()
+    # Footer and docs as before
     (
         game_title,
         game_settings,
