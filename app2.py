@@ -351,8 +351,8 @@ class GamingPerformanceAnalyzer:
             ax.spines['bottom'].set_visible(False)
             ax.spines['left'].set_visible(False)
             if ax != ax1:
-                idx = axes.index(ax)-1
-                ax.spines['right'].set_color(colors_used[idx][1] if idx < len(colors_used) else 'white')
+                ax.spines['right'].set_color('black')
+                ax.spines['right'].set_visible(True)
             else:
                 ax.spines['right'].set_visible(False)
         plt.tight_layout()
