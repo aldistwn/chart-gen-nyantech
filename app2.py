@@ -325,7 +325,7 @@ class GamingPerformanceAnalyzer:
                 padding = data_max * 0.1
                 ax.set_ylim(0, data_max + padding)
             colors_used.append((col_display, col_color))
-        ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
+        ax1.set_xlabel('Time (minutes)', fontsize=12, color='black', fontweight='bold')
         ax1.tick_params(axis='x', colors='black', labelsize=10)
         ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
         ax1.set_facecolor('#0E1117')
