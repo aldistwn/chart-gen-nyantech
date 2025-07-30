@@ -319,14 +319,14 @@ class GamingPerformanceAnalyzer:
             col_display = self.get_column_display_name(col)
             ax.plot(time_data, col_data, color=col_color, linewidth=2.5, label=col_display, alpha=0.8, zorder=len(selected_columns)-i)
             ax.set_ylabel(col_display, fontsize=12, color=col_color, fontweight='bold')
-            ax.tick_params(axis='y', colors='white', labelsize=10)
+            ax.tick_params(axis='y', colors='black', labelsize=10)
             if np.isfinite(col_data.max()) and not col_data.dropna().empty:
                 data_max = col_data.max()
                 padding = data_max * 0.1
                 ax.set_ylim(0, data_max + padding)
             colors_used.append((col_display, col_color))
         ax1.set_xlabel('Time (minutes)', fontsize=12, color='white', fontweight='bold')
-        ax1.tick_params(axis='x', colors='white', labelsize=10)
+        ax1.tick_params(axis='x', colors='black', labelsize=10)
         ax1.grid(True, alpha=0.3, linestyle='--', color='gray')
         ax1.set_facecolor('#0E1117')
         title_lines = [config['game_title']]
@@ -351,7 +351,7 @@ class GamingPerformanceAnalyzer:
             ax.spines['bottom'].set_visible(False)
             ax.spines['left'].set_visible(False)
             if ax != ax1:
-                ax.spines['right'].set_color('black')
+                ax.spines['right'].set_color('white')
                 ax.spines['right'].set_visible(True)
             else:
                 ax.spines['right'].set_visible(False)
